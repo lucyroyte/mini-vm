@@ -6,18 +6,8 @@ import { loadBuildingsInView } from './data.js';
 
 /* global maplibregl */
 
-const BASEMAP = {
-  version: 8,
-  sources: {
-    basemap: {
-      type: 'raster',
-      tiles: ['a', 'b', 'c', 'd'].map((s) => `https://${s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}@2x.png`),
-      tileSize: 256,
-      attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors © <a href="https://carto.com/attributions">CARTO</a>',
-    },
-  },
-  layers: [{ id: 'basemap', type: 'raster', source: 'basemap' }],
-};
+// OpenFreeMap's vector Positron style: free, no API key, OpenStreetMap data.
+const BASEMAP = 'https://tiles.openfreemap.org/styles/positron';
 
 const empty = () => ({ type: 'FeatureCollection', features: [] });
 
