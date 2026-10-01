@@ -21,14 +21,17 @@ export const LAYERS = {
     keep: (p) => /brooklyn/i.test(p.boro_name ?? p.boroname ?? p.BoroName ?? '') || String(p.boro_code ?? p.borocode ?? p.BoroCode) === '3',
   },
   parks: { label: 'Parks properties', needsGeometry: true, ids: ['enfh-gkve'], search: 'Parks Properties' },
-  hydrography: { label: 'Hydrography', needsGeometry: true, ids: ['drh3-e2fd'], search: 'Hydrography' },
-  shoreline: { label: 'Shoreline', needsGeometry: true, ids: ['2qj2-cctx'], search: 'Shoreline' },
+  hydrography: { label: 'Hydrography', needsGeometry: true, ids: ['pjs3-c3z5', 'drh3-e2fd'], search: 'Hydrography' },
+  shoreline: { label: 'Shoreline', needsGeometry: true, ids: ['59xk-wagz', '2qj2-cctx'], search: 'Shoreline' },
   floodplain: {
     label: 'FEMA 100-year floodplain',
     needsGeometry: true,
-    ids: ['ezfn-5dsb'],
+    ids: ['aqw3-vugz', 'ezfn-5dsb'],
     search: 'Sea Level Rise Maps (2020s 100-year Floodplain)',
     fallbackSearch: 'NYC Stormwater Flood Map',
+    // aqw3-vugz is the 2020s 500-year floodplain; its A and V zones are the
+    // 100-year floodplain inside it.
+    keep: (p) => !('fld_zone' in p) || /^[AV]/.test(p.fld_zone ?? ''),
   },
   landcover: {
     label: 'Land use and buildings (MapPLUTO)',
@@ -87,15 +90,18 @@ async function resolve(layer) {
       return null;
     }
   };
+  // A "map" asset has metadata but no rows, so a geometry column is the
+  // real sign that a dataset can be drawn.
+  const usable = (found) => found && (found.geom || !layer.needsGeometry);
   for (const id of layer.ids) {
     const found = await attempt(id);
-    if (found) return found;
+    if (usable(found)) return found;
   }
   for (const query of [layer.search, layer.fallbackSearch].filter(Boolean)) {
     try {
       for (const id of await searchCatalog(query)) {
         const found = await attempt(id);
-        if (found && (found.geom || !layer.needsGeometry)) return found;
+        if (usable(found)) return found;
       }
     } catch { /* catalog unavailable; try next */ }
   }
