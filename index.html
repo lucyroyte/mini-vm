@@ -1,0 +1,142 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Brooklyn Vision</title>
+  <link rel="stylesheet" href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css">
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <div id="map" aria-label="Map of Brooklyn"></div>
+
+  <header id="toolbar" role="toolbar" aria-label="Editing tools">
+    <div class="brand">Brooklyn Vision</div>
+    <div class="group" id="tools">
+      <button data-tool="inspect" title="Inspect a cell (I)" aria-pressed="true">Inspect</button>
+      <button data-tool="brush" title="Paint cells (B)">Brush</button>
+      <button data-tool="rect" title="Fill a rectangle (R)">Rectangle</button>
+      <button data-tool="fill" title="Fill a connected area of one type (F)">Fill</button>
+      <button data-tool="restore" title="Paint cells back to how they are today (E)">Restore</button>
+    </div>
+    <div class="group" id="brush-size" title="Brush size">
+      <label for="brush">Size</label>
+      <select id="brush">
+        <option value="0">100 m</option>
+        <option value="1" selected>300 m</option>
+        <option value="2">500 m</option>
+        <option value="4">900 m</option>
+      </select>
+    </div>
+    <div class="group">
+      <button id="palette-toggle" class="type-button" aria-haspopup="true" aria-expanded="false" title="Ecosystem type to paint">
+        <span class="swatch" id="active-swatch"></span><span id="active-name">Forest</span>
+      </button>
+    </div>
+    <div class="group">
+      <button id="undo" title="Undo (Ctrl+Z)">Undo</button>
+      <button id="redo" title="Redo (Ctrl+Shift+Z)">Redo</button>
+    </div>
+    <div class="group">
+      <label for="display">Show</label>
+      <select id="display">
+        <option value="vision">Vision</option>
+        <option value="today">Today</option>
+        <option value="changes">Changes only</option>
+        <option value="flood">Flooding</option>
+        <option value="heat">Heat</option>
+        <option value="habitat">Habitat</option>
+        <option value="elevation">Elevation</option>
+      </select>
+    </div>
+    <div class="group" id="layers">
+      <button id="layers-toggle" aria-haspopup="true" aria-expanded="false">Layers</button>
+      <div class="menu" id="layers-menu" hidden>
+        <label><input type="range" id="opacity" min="0" max="1" step="0.05" value="0.75"> Cell opacity</label>
+        <label><input type="checkbox" data-layer="floodplain"> FEMA floodplain</label>
+        <label><input type="checkbox" data-layer="parks"> Parks properties</label>
+        <label><input type="checkbox" data-layer="hydrography"> Hydrography</label>
+        <label><input type="checkbox" data-layer="shoreline"> Shoreline</label>
+        <label><input type="checkbox" data-layer="buildings" checked> Building footprints (zoom in)</label>
+        <label><input type="checkbox" data-layer="grid" checked> Cell grid (zoom in)</label>
+      </div>
+    </div>
+  </header>
+
+  <div id="palette" hidden role="dialog" aria-label="Ecosystem types"></div>
+  <div id="legend" hidden></div>
+
+  <aside id="panel" aria-label="Climate score">
+    <button id="panel-toggle" aria-expanded="true" title="Show or hide the panel">⟩</button>
+    <div class="panel-body">
+      <section class="score-card">
+        <h2>Climate score</h2>
+        <div class="score-row">
+          <div><div class="score" id="score-vision">–</div><div class="caption">Vision</div></div>
+          <div class="delta" id="score-delta"></div>
+          <div><div class="score muted" id="score-today">–</div><div class="caption">Today</div></div>
+        </div>
+        <div id="metrics"></div>
+      </section>
+
+      <section>
+        <h3>Climate scenario</h3>
+        <label class="field">Rainfall intensity <output id="rain-out"></output>
+          <input type="range" id="rain" min="0.5" max="5" step="0.01" list="rain-presets">
+        </label>
+        <datalist id="rain-presets"></datalist>
+        <div class="presets" id="rain-buttons"></div>
+        <label class="field">Sea level rise
+          <select id="slr"></select>
+        </label>
+        <p class="note">Flooding is modeled for a 100-year coastal storm on top of sea level rise, and a one-hour rain at the chosen intensity.</p>
+      </section>
+
+      <section>
+        <h3>Vision</h3>
+        <label class="field">Name <input id="vision-name" type="text" maxlength="80"></label>
+        <p class="note" id="vision-stats"></p>
+        <div class="buttons">
+          <button id="vision-save">Save</button>
+          <button id="vision-new">New</button>
+          <button id="vision-export">Export</button>
+          <label class="button">Import<input id="vision-import" type="file" accept="application/json,.json" hidden></label>
+        </div>
+        <ul id="vision-list"></ul>
+      </section>
+
+      <section id="inspector" hidden>
+        <h3>Cell</h3>
+        <dl id="cell-info"></dl>
+      </section>
+
+      <section>
+        <h3>Borough</h3>
+        <dl id="borough-info"></dl>
+        <details>
+          <summary>Data sources</summary>
+          <ul id="sources"></ul>
+          <button id="reload-data">Reload data from NYC Open Data</button>
+        </details>
+      </section>
+    </div>
+  </aside>
+
+  <div id="tooltip" hidden></div>
+
+  <div id="loading" role="status" aria-live="polite">
+    <div class="loading-card">
+      <h1>Brooklyn Vision</h1>
+      <p>Loading Brooklyn from NYC Open Data…</p>
+      <ul id="load-steps"></ul>
+      <div id="load-error" hidden>
+        <p></p>
+        <button id="retry">Try again</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
+  <script type="module" src="js/main.js"></script>
+</body>
+</html>
