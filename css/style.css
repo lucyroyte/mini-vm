@@ -79,9 +79,21 @@ table.values { border-collapse: collapse; font-size: 12px; font-variant-numeric:
 table.values th, table.values td { padding: 3px 6px; white-space: nowrap; }
 table.values thead th {
   position: sticky; top: 0; background: var(--surface); z-index: 1;
-  text-align: right; vertical-align: bottom; font-weight: 600; border-bottom: 1px solid var(--line); cursor: help;
+  text-align: right; vertical-align: bottom; font-weight: 600; border-bottom: 1px solid var(--line);
 }
-table.values thead th:first-child { text-align: left; cursor: default; }
+table.values thead th:first-child { text-align: left; }
+.info-head { border: 0; background: none; padding: 2px; font-weight: 600; text-align: right; cursor: help; }
+.info-head:hover { color: var(--accent); }
+.info-icon {
+  display: inline-flex; align-items: center; justify-content: center; width: 13px; height: 13px; border-radius: 50%;
+  border: 1px solid currentColor; font: italic 600 9px/1 Georgia, serif; color: var(--muted); vertical-align: 1px;
+}
+#value-info {
+  position: fixed; z-index: 5; background: var(--text); color: #fff; border-radius: 8px; box-shadow: var(--shadow);
+  padding: 8px 10px; font-size: 12px; line-height: 1.45; pointer-events: none;
+}
+#value-info p { margin: 4px 0 0; }
+#value-info .info-range { color: #c9d1d8; }
 table.values th small { display: block; font-weight: 400; color: var(--muted); }
 table.values tbody th { text-align: left; font-weight: 400; }
 table.values tr.cat-row th {

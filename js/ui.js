@@ -11,20 +11,67 @@ const signed = (v, d = 0) => (v > 0 ? '+' : v < 0 ? '−' : '±') + fmt(Math.abs
 const pct = (v) => `${Math.round(100 * v)}%`;
 const esc = (s) => String(s).replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
 
-// Labels for ecosystem values. Any other numeric field an ecosystem defines is
-// shown too, under its own name, so new model parameters appear without edits here.
+// Labels and explanations for ecosystem values, shown in the info box on each
+// column heading of the values table. `about` says what the value is; `used`
+// says how the climate scores use it. Any other numeric field an ecosystem
+// defines is shown too, under its own name, so new model parameters appear
+// without edits here.
 const VALUE_INFO = {
-  imperviousness: { label: 'Impervious', title: 'Share of the surface water can\'t soak into', share: true },
-  vegetation: { label: 'Vegetation', title: 'Vegetation cover', share: true },
-  habitat: { label: 'Habitat', unit: '/10', title: 'Habitat value, 0 to 10', digits: 1 },
-  carbon: { label: 'Carbon', unit: 't/ha', title: 'Carbon stored in soil and plants, tonnes per hectare' },
-  storage: { label: 'Storage', unit: 'in', title: 'Inches of rain held on site during a storm', digits: 1 },
-  sewered: { label: 'Sewered', title: 'Share of the surface drained by storm sewers', share: true },
-  barrier: { label: 'Barrier', unit: 'ft', title: 'Feet a shoreline structure raises the edge above grade', digits: 1 },
-  attenuation: { label: 'Surge cut', unit: 'ft/100 m', title: 'Feet of storm surge absorbed per 100 m crossed', digits: 2 },
-  shade: { label: 'Shade', title: 'Share of the ground shaded by trees', share: true },
-  albedo: { label: 'Albedo', title: 'Share of sunlight reflected', share: true },
-  kc: { label: 'Water use', unit: '× lawn', title: 'Crop coefficient: evapotranspiration relative to a reference lawn', digits: 2 },
+  imperviousness: {
+    label: 'Impervious', name: 'Imperviousness', share: true,
+    about: 'The share of the ground covered by roofs, pavement and other hard surfaces that rain can\'t soak into. 100% is fully paved.',
+    used: 'Stormwater: rain on the pervious part soaks in at about 1 inch per hour; rain on hard surfaces runs off unless storm sewers take it. Where a vision leaves a cell as it is, the paved share measured from 2017 aerial imagery is used instead.',
+  },
+  vegetation: {
+    label: 'Vegetation', name: 'Vegetation cover', share: true,
+    about: 'The share of the ground covered by trees, shrubs, grass or other plants. Plants shade and cool the ground and help rain soak in.',
+    used: 'Heat: greener places stay cooler. Where a vision leaves a cell as it is, the tree and grass cover measured from 2017 aerial imagery is used instead.',
+  },
+  habitat: {
+    label: 'Habitat', unit: '/10', name: 'Habitat value', digits: 1,
+    about: 'How much the place offers wildlife (food, shelter and places to nest for birds, insects and other animals), from 0 for a parking lot to 10 for salt marsh. These are typical values for each ecosystem, not field surveys.',
+    used: 'Biodiversity: a cell counts for more when its neighbors are good habitat too (5 or more). A cell of 5 or more with at least 3 such neighbors counts as connected habitat, and every ecosystem of 4 or more that covers 10 ha adds to habitat variety.',
+  },
+  carbon: {
+    label: 'Carbon', unit: 't/ha', name: 'Carbon stored',
+    about: 'Carbon held in the soil and plants, in tonnes per hectare (a hectare is about 2.5 acres). Wetlands and forests store the most; buildings and pavement store almost none. These are rough typical values for comparing ecosystems.',
+    used: 'Carbon: the borough total adds up every cell. An average of 60 t/ha across Brooklyn would score 100.',
+  },
+  storage: {
+    label: 'Storage', unit: 'in', name: 'Rain storage', digits: 1,
+    about: 'Inches of rain the place can hold during a storm, in soil, plants, ponds or rain gardens, on top of what soaks into the ground. Green streets hold 1.5 in in their bioswales; freshwater wetlands hold the most.',
+    used: 'Stormwater: each hour a cell can take its storage, plus what soaks in, plus what the sewers carry. Rain beyond that runs downhill and collects in low spots; 4 in or more of standing water counts as flooded.',
+  },
+  sewered: {
+    label: 'Sewered', name: 'Sewered share', share: true,
+    about: 'The share of the hard surface that drains into storm sewers. Streets and buildings are fully sewered; parks, wetlands and beaches drain naturally.',
+    used: 'Stormwater: sewers carry up to 1.75 in of rain per hour, the city\'s design standard, from the sewered hard surface. Heavier rain overflows.',
+  },
+  barrier: {
+    label: 'Barrier', unit: 'ft', name: 'Shoreline barrier', digits: 1,
+    about: 'How many feet a shoreline structure (a bulkhead, seawall, dune or riprap) raises the water\'s edge above the ground. It is 0 for everything that isn\'t a shoreline structure.',
+    used: 'Coastal flooding: storm water stops at a cell unless it rises above the ground plus the barrier. The design storm is a 10 ft tide plus the sea level rise you pick.',
+  },
+  attenuation: {
+    label: 'Surge cut', unit: 'ft/100 m', name: 'Storm surge reduction', digits: 2,
+    about: 'How many feet a storm surge drops for every 100 m it crosses this ecosystem. Marshes, living shorelines and forests slow waves and lower the water behind them; hard surfaces don\'t.',
+    used: 'Coastal flooding: the water level falls by this much as it spreads across each cell, so a wide marsh can keep the land behind it dry.',
+  },
+  shade: {
+    label: 'Shade', name: 'Tree shade', share: true,
+    about: 'The share of the ground shaded by tree canopy. For buildings and streets it counts only backyards and courtyards; each cell\'s street trees come from the city\'s tree census.',
+    used: 'Heat: shade makes up 60% of a cell\'s cooling in the InVEST Urban Cooling model.',
+  },
+  albedo: {
+    label: 'Albedo', name: 'Albedo (reflectance)', share: true,
+    about: 'The share of sunlight a surface reflects instead of absorbing. Sand and light roofs reflect more; asphalt and water reflect less.',
+    used: 'Heat: reflectance makes up 20% of a cell\'s cooling in the InVEST Urban Cooling model.',
+  },
+  kc: {
+    label: 'Water use', unit: '× lawn', name: 'Evapotranspiration', digits: 2,
+    about: 'How much water the plants and soil give off to the air compared with a watered lawn (1.0). Evaporating water cools the air around it.',
+    used: 'Heat: evapotranspiration makes up 20% of a cell\'s cooling in the InVEST Urban Cooling model.',
+  },
 };
 
 export const valueFields = () => {
@@ -32,7 +79,7 @@ export const valueFields = () => {
   for (const t of ECOSYSTEMS) for (const [k, v] of Object.entries(t)) if (typeof v === 'number' && !keys.includes(k)) keys.push(k);
   const order = Object.keys(VALUE_INFO);
   return keys.sort((a, b) => (order.indexOf(a) + 1 || 99) - (order.indexOf(b) + 1 || 99)).map((key) => {
-    const info = VALUE_INFO[key] ?? { label: key, title: key };
+    const info = VALUE_INFO[key] ?? { label: key, name: key };
     const max = Math.max(...ECOSYSTEMS.map((t) => t[key] ?? 0));
     return { key, ...info, max };
   });
@@ -67,11 +114,15 @@ export function renderPalette(el, active, onPick) {
     const b = e.target.closest('[data-type]');
     if (b) onPick(+b.dataset.type);
   };
+  bindInfoBoxes(el);
 }
 
 function valuesTable(active) {
   const fields = valueFields();
-  const head = fields.map((f) => `<th scope="col" title="${esc(f.title)}">${esc(f.label)}${f.unit ? `<small>${esc(f.unit)}</small>` : ''}</th>`).join('');
+  const head = fields.map((f) => `
+    <th scope="col"><button class="info-head" data-info="${esc(f.key)}" aria-describedby="value-info">
+      ${esc(f.label)} <span class="info-icon" aria-hidden="true">i</span>${f.unit ? `<small>${esc(f.unit)}</small>` : ''}
+    </button></th>`).join('');
   const rows = CATEGORIES.map((cat) => `
     <tr class="cat-row"><th scope="rowgroup" colspan="${fields.length + 1}">${cat.name}</th></tr>
     ${ECOSYSTEMS.map((t, i) => (t.category === cat.id ? `
@@ -90,7 +141,54 @@ function valuesTable(active) {
         <tbody>${rows}</tbody>
       </table>
     </div>
-    <p class="note">Bars compare each value with the highest in its column. Hover a heading for what it means; click a row to paint with it.</p>`;
+    <p class="note">Bars compare each value with the highest in its column. Hover or tap a heading to see what it means; click a row to paint with it.</p>
+    <div id="value-info" role="tooltip" hidden></div>`;
+}
+
+// The info box under a values table heading: what the value means, how the
+// scores use it, and which ecosystems rank highest and lowest.
+function infoBox(f) {
+  const ranked = ECOSYSTEMS.filter((t) => t[f.key] != null).sort((a, b) => b[f.key] - a[f.key]);
+  const top = ranked.slice(0, 3).map((t) => `${esc(t.name)} ${fmtValue(f, t[f.key])}`).join(', ');
+  const lowest = ranked[ranked.length - 1][f.key];
+  const low = ranked.filter((t) => t[f.key] === lowest);
+  const lowNames = low.length > 2 ? `${esc(low[0].name)} and ${low.length - 1} others` : low.map((t) => esc(t.name)).join(' and ');
+  return `
+    <strong>${esc(f.name ?? f.label)}${f.unit ? ` (${esc(f.unit)})` : ''}</strong>
+    ${f.about ? `<p>${esc(f.about)}</p>` : ''}
+    ${f.used ? `<p>${esc(f.used)}</p>` : ''}
+    <p class="info-range">Highest: ${top}. Lowest: ${lowNames} ${fmtValue(f, lowest)}.</p>`;
+}
+
+function bindInfoBoxes(el) {
+  const box = el.querySelector('#value-info');
+  if (!box) return;
+  const fields = Object.fromEntries(valueFields().map((f) => [f.key, f]));
+  let pinned = null;
+  const show = (btn) => {
+    box.innerHTML = infoBox(fields[btn.dataset.info]);
+    box.hidden = false;
+    const r = btn.getBoundingClientRect();
+    const w = Math.min(320, window.innerWidth - 20);
+    box.style.width = `${w}px`;
+    box.style.left = `${Math.max(10, Math.min(r.left + r.width / 2 - w / 2, window.innerWidth - w - 10))}px`;
+    box.style.top = `${r.bottom + 6}px`;
+  };
+  const hide = () => { box.hidden = true; pinned = null; };
+  el.querySelectorAll('[data-info]').forEach((btn) => {
+    btn.addEventListener('mouseenter', () => { if (!pinned) show(btn); });
+    btn.addEventListener('mouseleave', () => { if (!pinned) box.hidden = true; });
+    btn.addEventListener('focus', () => show(btn));
+    btn.addEventListener('blur', hide);
+    // Tapping (or clicking) keeps the box open until the next tap, for touch screens.
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      if (pinned === btn) { hide(); return; }
+      pinned = btn; show(btn);
+    });
+  });
+  el.querySelector('.values-wrap').addEventListener('scroll', hide);
+  el.addEventListener('scroll', hide);
 }
 
 export function describeType(t) {
