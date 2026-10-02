@@ -2,6 +2,7 @@
 
 import { CATEGORIES, ECOSYSTEMS, BUILDING_SIZES, USES } from './ecosystems.js';
 import { SCALES } from './map.js';
+import { CELL, CELL_AREA, HA_PER_CELL } from './grid.js';
 
 export const $ = (sel) => document.querySelector(sel);
 
@@ -92,7 +93,7 @@ export function renderInspector(world, vision, results, i) {
   const p = results.perCell;
   const rows = [
     ['Cell', `#${i} (column ${c.col[i]}, row ${c.row[i]})`],
-    ['Area', '10,000 m² (1 ha)'],
+    ['Area', `${fmt(CELL_AREA)} m² (${fmt(HA_PER_CELL, 2)} ha)`],
     ['Elevation', `${fmt(c.elevation[i], 1)} ft`],
     ['In floodplain', c.inFloodplain[i] ? 'Yes' : 'No'],
     ['On shoreline', c.onShoreline[i] ? 'Yes' : 'No'],
@@ -115,7 +116,7 @@ export function renderBorough(world) {
   $('#borough-info').innerHTML = `
     <dt>Name</dt><dd>${world.borough.name}</dd>
     <dt>Total area</dt><dd>${fmt(world.borough.totalArea / 1e6, 1)} km² (${fmt(world.borough.totalArea / 2.58999e6, 1)} sq mi) of land</dd>
-    <dt>Cells</dt><dd>${fmt(world.cells.count)} cells of 100 m × 100 m</dd>
+    <dt>Cells</dt><dd>${fmt(world.cells.count)} cells of ${CELL} m × ${CELL} m</dd>
     <dt>Most common</dt><dd>${top.map(([t, n]) => `${swatch(ECOSYSTEMS[t])} ${fmt(n)}`).join('<br>')}</dd>`;
   $('#sources').innerHTML = world.sources.map((s) => `
     <li class="${s.ok ? '' : 'warn'}">${esc(s.label)}: ${s.url ? `<a href="${esc(s.url)}" target="_blank" rel="noopener">${esc(s.name ?? s.url)}</a>` : ''} ${s.ok ? '' : `<em>unavailable (${esc(s.error)})</em>`}</li>`).join('');

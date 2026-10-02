@@ -16,17 +16,13 @@
       <button data-tool="inspect" title="Inspect a cell (I)" aria-pressed="true">Inspect</button>
       <button data-tool="brush" title="Paint cells (B)">Brush</button>
       <button data-tool="rect" title="Fill a rectangle (R)">Rectangle</button>
+      <button data-tool="lot" title="Paint a whole tax lot (L)">Lot</button>
       <button data-tool="fill" title="Fill a connected area of one type (F)">Fill</button>
       <button data-tool="restore" title="Paint cells back to how they are today (E)">Restore</button>
     </div>
     <div class="group" id="brush-size" title="Brush size">
       <label for="brush">Size</label>
-      <select id="brush">
-        <option value="0">100 m</option>
-        <option value="1" selected>300 m</option>
-        <option value="2">500 m</option>
-        <option value="4">900 m</option>
-      </select>
+      <select id="brush"></select>
     </div>
     <div class="group">
       <button id="palette-toggle" class="type-button" aria-haspopup="true" aria-expanded="false" title="Ecosystem type to paint">

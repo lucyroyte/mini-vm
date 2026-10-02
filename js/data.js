@@ -39,6 +39,7 @@ export const LAYERS = {
     ids: ['64uk-42ks'],
     search: 'Primary Land Use Tax Lot Output (PLUTO)',
   },
+  lotShapes: { label: 'Tax lot polygons', needsGeometry: true, ids: ['i38t-6if2'], search: 'TAX_LOT_POLYGON' },
   buildings: { label: 'Building footprints', needsGeometry: true, ids: ['5zhs-2jue', 'nqwf-w8eh'], search: 'Building Footprints' },
 };
 
@@ -191,4 +192,17 @@ export async function loadBuildingsInView(bbox, signal) {
     p.height = +(p.height_roof ?? p.heightroof ?? 0);
   }
   return json;
+}
+
+// The tax lot polygon under a point, for the Lot tool. Lots are fetched one at
+// a time as the pointer moves, so the app never downloads all ~276k shapes.
+// Air rights and sub lots are skipped in favor of the ground lot.
+let lotsDataset;
+export async function loadLotAt(lon, lat, signal) {
+  lotsDataset ??= resolve(LAYERS.lotShapes);
+  const dataset = await lotsDataset;
+  const params = new URLSearchParams({ $limit: 10, $where: `intersects(${dataset.geom ?? 'the_geom'}, 'POINT(${lon} ${lat})')` });
+  const json = await getJSON(`${DOMAIN}/resource/${dataset.id}.geojson?${params}`, signal);
+  const ground = (f) => !f.properties.air_lot_flag && !f.properties.sub_lot_flag;
+  return json.features.find(ground) ?? json.features[0] ?? null;
 }

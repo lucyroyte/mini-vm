@@ -3,13 +3,13 @@
 // imperviousness  0–1, share of the surface water can't soak into
 // vegetation      0–1, vegetation cover
 // habitat         0–10, habitat value
-// carbon          carbon stored, tonnes C per cell (1 ha); relative values
+// carbon          carbon stored, tonnes C per hectare; relative values
 // color           map color
 //
 // Model parameters (used by models.js, not part of the entity description):
 // storage         inches of rain held on site during a storm (soil, ponds, plants)
 // barrier         feet a shoreline structure raises the edge above grade
-// attenuation     feet of storm surge absorbed per cell crossed
+// attenuation     feet of storm surge absorbed per 100 m crossed
 // sewered         share of the surface drained by storm sewers
 
 export const CATEGORIES = [

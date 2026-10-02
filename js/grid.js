@@ -1,13 +1,14 @@
-// Builds the Borough and its 100 m Cells from the loaded data, and assigns each
+// Builds the Borough and its 50 m Cells from the loaded data, and assigns each
 // cell the ecosystem type of its dominant land cover.
 
 import { TYPE_INDEX, WATER } from './ecosystems.js';
 import { makeProjection, bboxOf, rasterizePolygons, rasterizeLines } from './geo.js';
 
-export const CELL = 100; // meters
-export const CELL_AREA = CELL * CELL; // 10,000 m²
-const SUB = 4; // land cover is sampled on a 4 × 4 lattice inside each cell (25 m)
-const WATER_MARGIN = 4; // water cells kept around the shore, so visions can build into the water
+export const CELL = 50; // meters
+export const CELL_AREA = CELL * CELL; // 2,500 m²
+export const HA_PER_CELL = CELL_AREA / 10000; // per-hectare values × this = per-cell values
+const SUB = Math.max(1, Math.round(CELL / 25)); // land cover is sampled on a 25 m lattice inside each cell
+const WATER_MARGIN = Math.round(400 / CELL); // water cells kept around the shore (400 m), so visions can build into the water
 const SQFT = 0.092903;
 
 // NYC Parks property categories → ecosystem type.
@@ -257,6 +258,32 @@ export function cellAt(world, lon, lat) {
   const c = Math.floor((x - x0) / CELL), r = Math.floor((y - y0) / CELL);
   if (c < 0 || r < 0 || c >= cols || r >= rows) return -1;
   return world.index[r * cols + c];
+}
+
+// Cells whose centers fall inside a square of the given side (meters) centered
+// on a point. Used to load visions saved on a coarser grid.
+export function cellsInSquare(world, lon, lat, side) {
+  const { x0, y0, cols, rows, lon0, lat0 } = world.grid;
+  const [x, y] = makeProjection(lon0, lat0).toXY(lon, lat);
+  const lo = (v, v0) => Math.floor((v - side / 2 - v0) / CELL - 0.5) + 1;
+  const hi = (v, v0) => Math.ceil((v + side / 2 - v0) / CELL - 0.5) - 1;
+  const c0 = lo(x, x0), c1 = hi(x, x0), r0 = lo(y, y0), r1 = hi(y, y0);
+  const out = [];
+  for (let r = Math.max(0, r0); r <= Math.min(rows - 1, r1); r++) for (let c = Math.max(0, c0); c <= Math.min(cols - 1, c1); c++) {
+    const j = world.index[r * cols + c];
+    if (j >= 0) out.push(j);
+  }
+  return out;
+}
+
+// Cells whose centers fall inside a polygon feature.
+export function cellsInPolygon(world, feature) {
+  const { x0, y0, cols, rows, lon0, lat0 } = world.grid;
+  const out = new Set();
+  rasterizePolygons([feature], { x0, y0, step: CELL, cols, rows }, makeProjection(lon0, lat0), (k) => {
+    if (world.index[k] >= 0) out.add(world.index[k]);
+  });
+  return [...out];
 }
 
 // 8-connected neighbor cell ids.
