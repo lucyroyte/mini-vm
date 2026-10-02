@@ -6,6 +6,7 @@ import { bboxOf } from './geo.js';
 import { prepare, runModels, SCENARIO_PRESETS } from './models.js';
 import { Vision, savedVisions, saveVision, deleteVision } from './vision.js';
 import { createMap, paintCells, paintSome, setCursor } from './map.js';
+import { set3D } from './model3d.js';
 import { cacheGet, cacheSet, cacheClear } from './store.js';
 import {
   $, renderPalette, renderScore, renderInspector, renderBorough, renderLegend, renderVisionList,
@@ -212,6 +213,18 @@ function app(world, map) {
     };
     input.addEventListener('change', apply);
     apply();
+  });
+  $('#view-3d').addEventListener('click', async (e) => {
+    const button = e.currentTarget;
+    const on = button.getAttribute('aria-pressed') !== 'true';
+    button.setAttribute('aria-pressed', on);
+    try {
+      await set3D(map, on);
+    } catch (err) {
+      console.error(err);
+      button.setAttribute('aria-pressed', false);
+      alert(`The 3D buildings couldn't be loaded: ${err.message}`);
+    }
   });
   $('#opacity').addEventListener('input', (e) => map.setPaintProperty('cells', 'fill-opacity', +e.target.value));
 
