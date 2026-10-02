@@ -60,12 +60,14 @@ const METRICS = [
 ];
 
 export function renderScore(today, vision) {
-  $('#score-vision').textContent = Math.round(vision.overall);
-  $('#score-today').textContent = Math.round(today.overall);
-  const d = Math.round(vision.overall) - Math.round(today.overall);
+  // Each 1 ha cell moves the borough-wide score by only a few thousandths of a
+  // point, so whole numbers hide most edits: show a decimal and an unrounded delta.
+  $('#score-vision').textContent = fmt(vision.overall, 1);
+  $('#score-today').textContent = fmt(today.overall, 1);
+  const d = vision.overall - today.overall;
   const delta = $('#score-delta');
-  delta.textContent = d ? signed(d) : 'no change';
-  delta.className = `delta ${d > 0 ? 'good' : d < 0 ? 'bad' : ''}`;
+  delta.textContent = Math.abs(d) < 0.005 ? 'no change' : signed(d, Math.abs(d) < 1 ? 2 : 1);
+  delta.className = `delta ${d >= 0.005 ? 'good' : d <= -0.005 ? 'bad' : ''}`;
 
   $('#metrics').innerHTML = METRICS.map((spec) => {
     const t = today.metrics[spec.key], v = vision.metrics[spec.key];
