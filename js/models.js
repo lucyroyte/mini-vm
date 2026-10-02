@@ -91,9 +91,11 @@ export function prepare(world) {
   world.model = { nbr, sea, order, down, runoffToday: {}, cooling: coolingKernels(world) };
   world.model.heatToday = heat(world, world.cells.existing);
   // Average residents per cell of each type today, for cells a vision changes.
+  // Only buildings house people: a painted park, marsh or street holds none
+  // (today's averages for those come from cells that also cover homes).
   const sum = new Float64Array(ECOSYSTEMS.length), n = new Float64Array(ECOSYSTEMS.length);
   for (let i = 0; i < N; i++) { sum[world.cells.existing[i]] += world.cells.residents[i]; n[world.cells.existing[i]]++; }
-  world.model.density = Float32Array.from(sum, (v, t) => (n[t] ? v / n[t] : 0));
+  world.model.density = Float32Array.from(sum, (v, t) => (n[t] && ECOSYSTEMS[t].category === 'built' ? v / n[t] : 0));
 }
 
 // Coastal flooding: storm tide spreads inland from the sea over every cell lower
