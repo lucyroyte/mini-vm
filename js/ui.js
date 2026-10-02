@@ -9,6 +9,7 @@ export const $ = (sel) => document.querySelector(sel);
 // Negative digits round to tens, hundreds, thousands.
 const fmt = (v, d = 0) => (d < 0 ? Math.round(v / 10 ** -d) * 10 ** -d : v).toLocaleString('en-US', { maximumFractionDigits: Math.max(0, d), minimumFractionDigits: Math.max(0, d) });
 const signed = (v, d = 0) => (v > 0 ? '+' : v < 0 ? '−' : '±') + fmt(Math.abs(v), d);
+const pct = (v) => `${Math.round(100 * v)}%`;
 const esc = (s) => String(s).replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
 
 export function renderPalette(el, active, onPick) {
@@ -61,12 +62,14 @@ const METRICS = [
 ];
 
 export function renderScore(today, vision) {
-  $('#score-vision').textContent = Math.round(vision.overall);
-  $('#score-today').textContent = Math.round(today.overall);
-  const d = Math.round(vision.overall) - Math.round(today.overall);
+  // Each 1 ha cell moves the borough-wide score by only a few thousandths of a
+  // point, so whole numbers hide most edits: show a decimal and an unrounded delta.
+  $('#score-vision').textContent = fmt(vision.overall, 1);
+  $('#score-today').textContent = fmt(today.overall, 1);
+  const d = vision.overall - today.overall;
   const delta = $('#score-delta');
-  delta.textContent = d ? signed(d) : 'no change';
-  delta.className = `delta ${d > 0 ? 'good' : d < 0 ? 'bad' : ''}`;
+  delta.textContent = Math.abs(d) < 0.005 ? 'no change' : signed(d, Math.abs(d) < 1 ? 2 : 1);
+  delta.className = `delta ${d >= 0.005 ? 'good' : d <= -0.005 ? 'bad' : ''}`;
 
   $('#metrics').innerHTML = METRICS.map((spec) => {
     const t = today.metrics[spec.key], v = vision.metrics[spec.key];
@@ -98,6 +101,7 @@ export function renderInspector(world, vision, results, i) {
     ['Elevation', `${fmt(c.elevation[i], 1)} ft`],
     ['In floodplain', c.inFloodplain[i] ? 'Yes' : 'No'],
     ['On shoreline', c.onShoreline[i] ? 'Yes' : 'No'],
+    ['Measured cover', c.tree?.[i] >= 0 ? `${pct(c.tree[i])} trees, ${pct(c.grass[i])} grass, ${pct(c.paved[i])} paved or roofed` : 'Not measured'],
     ['Existing type', swatch(ex)],
     ['Current type', swatch(cur) + (ex === cur ? '' : ' <em>(changed)</em>')],
     ['Coastal flood', p.coastalDepth[i] > 0 ? `${fmt(p.coastalDepth[i], 1)} ft deep` : 'Dry'],
@@ -131,6 +135,10 @@ export function renderLegend(mode) {
   const scale = SCALES[mode];
   if (!scale) { el.hidden = true; return; }
   el.hidden = false;
+  if (scale.swatches) {
+    el.innerHTML = `<div class="legend-title">${scale.label}</div>${scale.swatches.map(([name, color]) => `<div><span class="swatch" style="background:${color}"></span>${name}</div>`).join('')}`;
+    return;
+  }
   const stops = scale.stops;
   el.innerHTML = `
     <div class="legend-title">${scale.label}</div>

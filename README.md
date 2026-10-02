@@ -27,7 +27,7 @@ The first load downloads Brooklyn's data from NYC Open Data, which takes about a
   - **Restore**: paint cells back to their existing type.
   - The type button opens the palette of 28 ecosystem types, grouped by category.
   - **Undo** and **Redo** are also on Ctrl+Z and Ctrl+Shift+Z.
-  - **Show** switches the map between the vision, today, changes only, and the model results (flood depth, heat, habitat), plus elevation.
+  - **Show** switches the map between the vision, today, changes only, and the model results (flood depth, heat, habitat), plus elevation and the trees and paving measured from the air.
   - **Layers** toggles the reference data and the cell opacity.
   - **3D** tilts the map and shows 3D buildings, so far for Downtown Brooklyn (Community District 2) only. Right-drag or Ctrl-drag to rotate. Painting still works while tilted.
 - **Side panel**
@@ -57,15 +57,19 @@ Keyboard shortcuts: I, B, R, F and E pick the tools; Esc closes the palette.
 | FloodNet sensors | [FloodNet](https://www.floodnet.nyc/) API (sensor locations) and NYC Open Data, *FloodNet: Street Flooding Events* | **FloodNet flood sensors** layer, loaded when turned on |
 | Street trees | NYC Open Data, *2015 Street Tree Census* | Tree shade per cell, for the heat model |
 | Heat vulnerability | NYC Open Data, *Heat Vulnerability Index Rankings* (DOHMH, by ZIP code) | Counting heat-vulnerable residents |
+| Measured land cover | NYC Open Data, [*Land Cover Raster Data (2017), 6in Resolution*](https://data.cityofnewyork.us/d/he6d-2qns) (2017 lidar and 2016 aerial imagery), reduced to a 12 m map in `data/landcover/` | Each cell's share of tree canopy, grass and paved or roofed surface; corrects open space types; today's imperviousness and vegetation in the models |
 
 NYC Open Data sometimes republishes a dataset under a new ID. `js/data.js` lists the known IDs for each layer, and falls back to a catalog search by name when none of them works. Each layer except the boundary is optional. If one fails to load, the grid is built from the rest, and the failure appears under *Data sources*.
 
-**About land cover.** NYC's *Land Cover 2017* dataset is a 6-inch raster several gigabytes in size, too large to process in a browser. Instead, each cell's dominant cover comes from the vector layers above. The land cover is sampled on a 25 m lattice (16 points per cell), then:
+**About land cover.** Each cell's type comes from the vector layers above, checked against what the ground looks like from the air. NYC's *Land Cover 2017* raster (6-inch pixels, 98 GB unzipped) is too large for a browser, so `tools/nyc_landcover.py` reduces it once to a 12 m map of Brooklyn's tree canopy, grass and shrub, and paved or roofed shares (4 MB PNG). The vector layers are sampled on a 25 m lattice (4 points per cell), then:
 
 1. A cell that is mostly outside the borough's land, or mostly inside hydrography, is **open water**.
 2. A cell that is mostly park is mapped by the park's category. For example, *Nature Area* becomes forest, *Garden* becomes community garden, and *Playground* becomes plaza. Natural areas below 6 ft in the floodplain become salt marsh.
 3. Otherwise, the tax lots in the cell decide. Large lots are spread over the cells they cover. The land use with the most lot area sets the use, and the average floors of its buildings set the size: low-rise is 1–4 stories, mid-rise 5–12, high-rise 13 or more.
 4. A cell less than a quarter covered by lots is mostly right-of-way, so it becomes a **street**.
+5. Open space is corrected by the measured cover. A park, meadow or vacant lot cell that is 60% or more tree canopy is **forest**. One that is 70% or more paved is **plaza** (a park's courts and playgrounds) or **parking** (a paved vacant lot). A forest cell that is 70% paved is plaza, and one under 25% canopy with more grass than trees is meadow. This turns about 1,150 park cells into forest (Prospect Park's woods, for example), about 1,350 into plaza (playgrounds, courts and paved park paths), about 400 vacant lot cells into parking, and about 110 forest cells into meadow.
+
+Every cell also keeps its measured shares, shown in the cell inspector and in **Show → Trees and paving**. The models use them for today's imperviousness and vegetation, so a tree-lined block of row houses absorbs more rain and runs cooler than a bare one. A cell a vision changes takes its new type's typical values.
 
 The data has no shoreline structure types such as bulkheads, so shoreline cells start as their land type, and visions can add bulkheads, riprap, beaches or living shorelines.
 
@@ -102,7 +106,7 @@ How the flood and heat models compare with open measurements of Brooklyn (cells 
 | Coastal flooding, 10 ft storm tide | FEMA/NPCC 100-year floodplain (2020s) | 76% of the floodplain flooded; 25% of modeled flooding outside it |
 | Coastal flooding, 11.3 ft (Sandy's peak at the Battery) | *Sandy Inundation Zone* | 84% of the zone flooded; 30% outside it |
 | Stormwater, 2.13 in/hr | [FloodNet](https://www.floodnet.nyc/) street flood sensors in Brooklyn (135), floods since 2020 | 55% of sensors in cells the model floods have measured 4 in or more of water, against 28% elsewhere. The model flags 65% of the sensors that flooded; the earlier terrain-only model flagged 20% |
-| Heat | Landsat summer surface temperature | r = 0.57 |
+| Heat | Landsat summer surface temperature | r = 0.70 |
 
 - **Flooding** has two parts.
   - *Coastal*: a 100-year storm tide (10 ft NAVD88, plus sea level rise) spreads inland from open water across every cell lower than the water. A bulkhead, riprap, port edge or dune stops the water until it is overtopped. Wetlands and living shorelines absorb part of the surge as it crosses them.
@@ -110,7 +114,7 @@ How the flood and heat models compare with open measurements of Brooklyn (cells 
   - The score is half property (flooded homes, businesses and streets; flooded wetlands and parks count only a little) and half residents flooded.
 - **Residents**: each 2020 Census block's population is split among its tax lots by residential units (blocks with no units, such as dorms and nursing homes, by floor area), then spread over the lots' cells. Where a vision changes a cell's type, the cell gets today's average residents for that type, so new housing adds people and replacing homes moves people out.
 - **Biodiversity**: each cell's habitat value is weighted by how many of its neighbors are good habitat, which rewards connected habitat. A bonus is added for the number of different habitat types.
-- **Heat**: the [InVEST Urban Cooling model](https://storage.googleapis.com/releases.naturalcapitalproject.org/invest-userguide/latest/en/urban_cooling_model.html) from the Natural Capital Project. Each cell's cooling capacity is 0.6 × shade + 0.2 × albedo + 0.2 × evapotranspiration, with shade from its type plus its street trees. Parks of 2 ha or more cool cells within 450 m, and air mixes over about 500 m. Today's map is Landsat's measured summer surface temperature, and a vision adds the model's change from today. The model is scaled to Landsat: measured ≈ 81 °F + 25.5 °F × (1 − heat mitigation), which explains a third of the variation between cells (r = 0.57; the previous model reached r = 0.53). The score is half the land's average temperature and half the average where people live; heat islands are cells at 105 °F or more.
+- **Heat**: the [InVEST Urban Cooling model](https://storage.googleapis.com/releases.naturalcapitalproject.org/invest-userguide/latest/en/urban_cooling_model.html) from the Natural Capital Project. Each cell's cooling capacity is 0.6 × shade + 0.2 × albedo + 0.2 × evapotranspiration, with shade from the measured tree canopy (or, where a vision changes the cell, its type plus its street trees). Parks of 2 ha or more cool cells within 450 m, and air mixes over about 500 m. Today's map is Landsat's measured summer surface temperature, and a vision adds the model's change from today. The model is scaled to Landsat: measured ≈ 79 °F + 28.4 °F × (1 − heat mitigation), which explains about half the variation between cells (r = 0.70; with street trees alone instead of measured canopy r = 0.57, and the previous model reached r = 0.53). The score is half the land's average temperature and half the average where people live; heat islands are cells at 105 °F or more.
 - **Carbon**: total carbon stored in soil and plants, in tonnes per 1-ha cell.
 
 Each metric is scored from 0 to 100, and the climate score is their average.
@@ -124,6 +128,7 @@ js/main.js           loading, tools, and app wiring
 js/data.js           NYC Open Data (Socrata) loading
 js/elevation.js      terrain tiles → elevation
 js/rasters.js        summer surface temperature and stormwater flood maps
+js/landcover.js      measured land cover map (data/landcover/)
 js/geo.js            projection and polygon rasterization
 js/grid.js           Borough and Cell grid, land cover classification
 js/ecosystems.js     ecosystem types
@@ -137,6 +142,7 @@ data/3d/             3D buildings per community district (glTF) and models.json 
 data/census/         2020 Census population and housing units per Brooklyn block
 data/heat/           Landsat summer surface temperature (PNG) and its bounds
 data/flood/          NYC Stormwater Flood Maps for Brooklyn (PNG) and their bounds
-tools/               converter from the NYC 3D Model (.3dm) to glTF, and the census, Landsat and flood map extractors
+data/landcover/      tree canopy, grass and paved shares at 12 m, from NYC Land Cover 2017
+tools/               converter from the NYC 3D Model (.3dm) to glTF, and the census, Landsat, flood map and land cover extractors
 docs/semantic-model.md
 ```

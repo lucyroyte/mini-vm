@@ -126,6 +126,14 @@ function coastal(world, types, seaLevelRise) {
   return depth; // feet
 }
 
+// A cell's paved and planted shares: as measured from the air where a vision
+// leaves the cell as it is today, and its type's typical values where it changes.
+function surface(world, types, i) {
+  const c = world.cells;
+  if (types[i] !== c.existing[i] || !(c.paved?.[i] >= 0)) return ECOSYSTEMS[types[i]];
+  return { imperviousness: c.paved[i], vegetation: c.tree[i] + c.grass[i] };
+}
+
 // Rain the ground, plants and sewers can't take, routed downhill: for each
 // cell, the inches of excess runoff (over one cell's area) that reach it.
 function runoff(world, types, rainfall) {
@@ -136,7 +144,8 @@ function runoff(world, types, rainfall) {
   for (let i = 0; i < count; i++) {
     const t = ECOSYSTEMS[types[i]];
     if (types[i] === WATER) { spare[i] = Infinity; continue; }
-    const capacity = t.storage + (1 - t.imperviousness) * SOIL_INFILTRATION + SEWER_CAPACITY * t.sewered * t.imperviousness;
+    const { imperviousness } = surface(world, types, i);
+    const capacity = t.storage + (1 - imperviousness) * SOIL_INFILTRATION + SEWER_CAPACITY * t.sewered * imperviousness;
     flow[i] = Math.max(0, rainfall - capacity);
     spare[i] = Math.max(0, capacity - rainfall);
   }
@@ -193,10 +202,10 @@ function stormwater(world, types, rainfall) {
 // https://storage.googleapis.com/releases.naturalcapitalproject.org/invest-userguide/latest/en/urban_cooling_model.html
 // The model's output, 1 − heat mitigation, is scaled to Landsat's summer
 // surface temperature: across Brooklyn's land cells, measured temperature ≈
-// tRef + uhiMax × (1 − heat mitigation) (r = 0.57, see tools/README.md).
+// tRef + uhiMax × (1 − heat mitigation) (r = 0.70, see tools/README.md).
 export const HEAT = {
-  tRef: 81, // °F, a fully cooled landscape
-  uhiMax: 25.5, // °F, the most a fully paved, unshaded place exceeds it
+  tRef: 79, // °F, a fully cooled landscape
+  uhiMax: 28.4, // °F, the most a fully paved, unshaded place exceeds it
   hotF: 105, // °F, a heat island
   coolDistance: 450, // m, how far a park's cooling reaches
   mixDistance: 500, // m, how far air mixes
@@ -261,14 +270,21 @@ function heat(world, types) {
   const { count, canopy, col, row } = world.cells;
   const { cols, rows } = world.grid;
   const { park, parkSum, box, weight } = world.model.cooling;
-  const cc = new Float32Array(count);
-  for (let i = 0; i < count; i++) cc[i] = coolingCapacity(ECOSYSTEMS[types[i]], canopy[i]);
+  const cc = new Float32Array(count), green = new Uint8Array(count);
+  for (let i = 0; i < count; i++) {
+    const t = ECOSYSTEMS[types[i]];
+    // Measured tree canopy and grass where a vision leaves the cell as it is.
+    const measured = types[i] === world.cells.existing[i] && world.cells.tree?.[i] >= 0;
+    cc[i] = measured ? 0.6 * world.cells.tree[i] + 0.2 * t.albedo + 0.2 * Math.min(1, world.cells.tree[i] + 0.8 * world.cells.grass[i])
+      : coolingCapacity(t, canopy[i]);
+    green[i] = surface(world, types, i).vegetation >= 0.5 ? 1 : 0;
+  }
 
   // Green area and its cooling capacity, summed per block.
   const bc = Math.ceil(cols / BLOCK), br = Math.ceil(rows / BLOCK);
   const greenCC = new Float32Array(bc * br), greenHa = new Float32Array(bc * br);
   for (let i = 0; i < count; i++) {
-    if (ECOSYSTEMS[types[i]].vegetation < 0.5) continue;
+    if (!green[i]) continue;
     const b = Math.floor(row[i] / BLOCK) * bc + Math.floor(col[i] / BLOCK);
     greenCC[b] += cc[i] / (BLOCK * BLOCK);
     greenHa[b] += HA_PER_CELL;
