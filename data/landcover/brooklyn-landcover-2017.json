@@ -1,0 +1,12 @@
+{
+ "bbox": [
+  -74.06,
+  40.565,
+  -73.83,
+  40.745
+ ],
+ "width": 1533,
+ "height": 1636,
+ "encoding": "R tree canopy, G grass/shrub, B buildings+roads+other impervious; share * 250; 255,255,255 = no data",
+ "source": "NYC 2017 6-inch land cover (lidar and 2016 orthoimagery), NYC Open Data he6d-2qns, 4 ft pyramid level"
+}
