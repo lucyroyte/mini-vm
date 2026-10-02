@@ -41,8 +41,8 @@ export function describeType(t) {
 const METRICS = [
   {
     key: 'flooding', name: 'Flooding',
-    detail: (m) => `${fmt(m.floodedHa)} ha flooded (${fmt(m.coastalHa)} coastal, ${fmt(m.stormHa)} stormwater); ${fmt(m.floodedPeople, -3)} residents and ${fmt(m.exposedHa)} ha of homes, businesses and streets at risk`,
-    value: (m) => m.floodedPeople, unit: 'residents flooded', digits: -2, lowerIsBetter: true,
+    detail: (m) => `${fmt(m.floodedHa)} ha flooded (${fmt(m.coastalHa)} coastal, ${fmt(m.stormHa)} stormwater); ${fmt(m.exposedHa)} ha of homes, businesses and streets at risk`,
+    value: (m) => m.exposedHa, unit: 'ha at risk', lowerIsBetter: true,
   },
   {
     key: 'biodiversity', name: 'Biodiversity',
@@ -51,7 +51,7 @@ const METRICS = [
   },
   {
     key: 'heat', name: 'Heat',
-    detail: (m) => `Summer surfaces average ${fmt(m.meanTemp, 1)} °F (${fmt(m.peopleTemp, 1)} °F where people live); ${fmt(m.hotPeople, -3)} residents, ${fmt(m.hotVulnerable, -3)} of them in heat-vulnerable ZIP codes, live in ${fmt(m.hotHa)} ha of heat islands`,
+    detail: (m) => `Summer surfaces average ${fmt(m.meanTemp, 1)} °F; ${fmt(m.hotHa)} ha of heat islands (105 °F or more)`,
     value: (m) => m.meanTemp, unit: '°F', digits: 1, lowerIsBetter: true,
   },
   {
@@ -61,7 +61,28 @@ const METRICS = [
   },
 ];
 
+// People living with the flooding and heat, shown beside the score but not in it.
+const PEOPLE = [
+  { name: 'Residents', value: (p) => p.population, digits: -2, unit: '', neutral: true },
+  { name: 'Residents flooded', value: (p) => p.floodedPeople, digits: -2, lowerIsBetter: true },
+  { name: 'Living in heat islands', value: (p) => p.hotPeople, digits: -2, lowerIsBetter: true },
+  { name: '…in heat-vulnerable ZIP codes', value: (p) => p.hotVulnerable, digits: -2, lowerIsBetter: true },
+  { name: 'Summer surface where people live', value: (p) => p.peopleTemp, digits: 1, unit: ' °F', lowerIsBetter: true },
+];
+
+function renderPeople(today, vision) {
+  $('#people').innerHTML = PEOPLE.map((spec) => {
+    const t = spec.value(today.people), v = spec.value(vision.people);
+    const step = spec.digits < 0 ? 10 ** -spec.digits / 2 : 0.05;
+    const d = v - t;
+    const cls = spec.neutral ? '' : (spec.lowerIsBetter ? d < 0 : d > 0) ? 'good' : 'bad';
+    const change = Math.abs(d) < step ? '' : ` <span class="${cls}">${signed(d, spec.digits)}${spec.unit ?? ''}</span>`;
+    return `<tr><th scope="row">${spec.name}</th><td>${fmt(v, spec.digits)}${spec.unit ?? ''}${change}</td></tr>`;
+  }).join('');
+}
+
 export function renderScore(today, vision) {
+  renderPeople(today, vision);
   // Each 1 ha cell moves the borough-wide score by only a few thousandths of a
   // point, so whole numbers hide most edits: show a decimal and an unrounded delta.
   $('#score-vision').textContent = fmt(vision.overall, 1);

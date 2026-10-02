@@ -368,7 +368,7 @@ export function runModels(world, types, scenario) {
   const storm = stormwater(world, types, scenario.rainfall);
   const heatMap = surfaceTemperature(world, types, heat(world, types));
   const hab = habitat(world, types);
-  const people = residents(world, types);
+  const residentsMap = residents(world, types);
 
   let land = 0, flooded = 0, exposed = 0, coastalCells = 0, stormCells = 0;
   let heatSum = 0, hot = 0, habSum = 0, carbon = 0;
@@ -379,7 +379,7 @@ export function runModels(world, types, scenario) {
     carbon += t.carbon * HA_PER_CELL;
     if (cells.land[i] < 0.5) continue;
     land++;
-    const p = people[i];
+    const p = residentsMap[i];
     population += p;
     // Coastal flooding covers whole cells; stormwater, part of a cell.
     const share = coastalDepth[i] > 0 ? 1 : storm.frac[i];
@@ -401,8 +401,9 @@ export function runModels(world, types, scenario) {
 
   const metrics = {
     flooding: {
-      // Half for homes, businesses and streets flooded, half for residents.
-      score: clamp(100 * (1 - 0.5 * exposed / (land * 0.3) - 0.5 * floodedPeople / (population * 0.3))),
+      // Homes, businesses and streets flooded. Residents are reported in
+      // people, not scored, so the score doesn't depend on where people live.
+      score: clamp(100 * (1 - exposed / (land * 0.3))),
       floodedHa: flooded * ha, exposedHa: exposed * ha, coastalHa: coastalCells * ha, stormHa: stormCells * ha,
       floodedPeople, population,
     },
@@ -411,8 +412,8 @@ export function runModels(world, types, scenario) {
       meanHabitat, connectedHa: hab.connected * ha, habitatTypes: diversity,
     },
     heat: {
-      // Half for the land's average temperature, half for where people live.
-      score: clamp(100 * (1 - (0.5 * (meanHeat - HEAT.tRef) + 0.5 * (peopleHeat - HEAT.tRef)) / HEAT.uhiMax)),
+      // The land's average temperature; where people live is reported in people.
+      score: clamp(100 * (1 - (meanHeat - HEAT.tRef) / HEAT.uhiMax)),
       meanTemp: meanHeat, peopleTemp: peopleHeat, hotHa: hot * ha, hotPeople, hotVulnerable,
     },
     carbon: {
@@ -420,6 +421,8 @@ export function runModels(world, types, scenario) {
       totalTonnes: carbon, perHa: carbon / (land * ha),
     },
   };
+  // Who lives with the flooding and heat. Not part of the climate score.
+  const people = { population, floodedPeople, hotPeople, hotVulnerable, peopleTemp: peopleHeat };
   const overall = (metrics.flooding.score + metrics.biodiversity.score + metrics.heat.score + metrics.carbon.score) / 4;
-  return { overall, metrics, perCell: { coastalDepth, stormDepth: storm.depth, stormFrac: storm.frac, heat: heatMap, habitat: hab.value, residents: people } };
+  return { overall, metrics, people, perCell: { coastalDepth, stormDepth: storm.depth, stormFrac: storm.frac, heat: heatMap, habitat: hab.value, residents: residentsMap } };
 }
