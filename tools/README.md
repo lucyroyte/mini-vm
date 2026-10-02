@@ -17,3 +17,16 @@ How the script handles the model:
 - **Layers.** Only roofs and facades are kept. Footprint surfaces are hidden under the buildings anyway, and the context layers (roads, parks, contours) are 2D lines only.
 - **No building IDs.** The model has no BIN or other ID, so buildings can't be linked to footprints or tax lots.
 - **Data age.** The model comes from a 2014 survey, so newer buildings are missing.
+
+# Reducing NYC's land cover map
+
+`nyc_landcover.py` writes `data/landcover/brooklyn-landcover-2017.png` and `.json` from NYC's *Land Cover Raster Data (2017), 6in Resolution* ([he6d-2qns](https://data.cityofnewyork.us/d/he6d-2qns)), classified from 2017 lidar and 2016 aerial imagery into tree canopy, grass and shrub, bare soil, water, buildings, roads, other impervious and railroads.
+
+```sh
+python3 -m pip install rasterio numpy pillow
+curl -L -o Land_Cover.zip 'https://data.cityofnewyork.us/api/views/he6d-2qns/files/64c49dc7-c17f-43db-a4e3-669a28f73234?filename=Land_Cover.zip'  # 1.3 GB
+unzip Land_Cover.zip 'Land_Cover/*.img' 'Land_Cover/*.rrd'
+python3 tools/nyc_landcover.py Land_Cover/NYC_2017_LiDAR_LandCover.img data/landcover/brooklyn-landcover-2017
+```
+
+The full raster is 98 GB unzipped, so the script reads only the 4 ft pyramid level in the `.rrd` file (2 GB). The pyramids are nearest-neighbour samples, so each 12 m pixel's class shares are still unbiased, from about 90 samples. Each output pixel holds tree canopy (red), grass and shrub (green) and buildings, roads and other paving (blue) as share × 250; white is outside the city.

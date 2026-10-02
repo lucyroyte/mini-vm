@@ -128,7 +128,22 @@ export const SCALES = {
   heat: { label: 'Heat above a fully green landscape', unit: '°F', stops: [[-6, '#2c7bb6'], [0, '#ffffbf'], [4, '#fdae61'], [9, '#d7191c']] },
   habitat: { label: 'Habitat value', unit: '/10', stops: [[0, '#f7f4ea'], [3, '#c2e699'], [6, '#41ab5d'], [10, '#00441b']] },
   elevation: { label: 'Elevation', unit: 'ft', stops: [[-5, '#2b5d8a'], [0, '#a6d1e6'], [10, '#f1eebd'], [40, '#c9a46b'], [150, '#7a4b2a']] },
+  cover: {
+    label: 'Measured from the air (2017), blended by share of each cell',
+    swatches: [['Tree canopy', '#2e7d32'], ['Grass and shrub', '#b5e07a'], ['Paved or roofed', '#9a9a9a'], ['Bare soil, water, rail', '#d8c7a0']],
+  },
 };
+
+// Blends the swatch colors of the measured cover by their shares.
+function coverColor(c, i) {
+  const tree = c.tree?.[i];
+  if (!(tree >= 0)) return '#eeeeee';
+  const shares = [tree, c.grass[i], c.paved[i]];
+  shares.push(Math.max(0, 1 - shares[0] - shares[1] - shares[2]));
+  const rgb = [0, 0, 0];
+  SCALES.cover.swatches.forEach(([, color], k) => hex(color).forEach((x, j) => { rgb[j] += x * shares[k]; }));
+  return `rgb(${rgb.map(Math.round).join(',')})`;
+}
 
 // Fills every cell's color for a display mode.
 export function paintCells(map, world, mode, vision, results) {
@@ -147,6 +162,7 @@ export function paintCells(map, world, mode, vision, results) {
       case 'heat': return ramp(SCALES.heat.stops, results.perCell.heat[i]);
       case 'habitat': return ramp(SCALES.habitat.stops, results.perCell.habitat[i]);
       case 'elevation': return ramp(SCALES.elevation.stops, world.cells.elevation[i]);
+      case 'cover': return ECOSYSTEMS[existing[i]].id === 'water' ? '#dfe9f2' : coverColor(world.cells, i);
       default: return ECOSYSTEMS[vision.current[i]].color;
     }
   };

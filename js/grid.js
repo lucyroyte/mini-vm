@@ -10,6 +10,8 @@ export const HA_PER_CELL = CELL_AREA / 10000; // per-hectare values × this = pe
 const SUB = Math.max(1, Math.round(CELL / 25)); // land cover is sampled on a 25 m lattice inside each cell
 const WATER_MARGIN = Math.round(400 / CELL); // water cells kept around the shore (400 m), so visions can build into the water
 const SQFT = 0.092903;
+// Measured land cover shares that override an open space's mapped category.
+const COVER = { forest: 0.6, paved: 0.7, openForest: 0.25 };
 
 // NYC Parks property categories → ecosystem type.
 const PARK_TYPES = {
@@ -37,7 +39,7 @@ const GROUPS = ['res', 'com', 'ind', 'trans', 'open', 'parking', 'vacant'];
 
 export const sizeForFloors = (f) => (f >= 13 ? 'high' : f >= 5 ? 'mid' : 'low');
 
-export function buildGrid({ boundary, parks = [], hydrography = [], shoreline = [], floodplain = [], wetlands = [], lots = [], elevation = null }) {
+export function buildGrid({ boundary, parks = [], hydrography = [], shoreline = [], floodplain = [], wetlands = [], lots = [], elevation = null, landcover = null }) {
   const [w, s, e, n] = bboxOf(boundary);
   const proj = makeProjection((w + e) / 2, (s + n) / 2);
   const [bx0, by0] = proj.toXY(w, s);
@@ -114,6 +116,9 @@ export function buildGrid({ boundary, parks = [], hydrography = [], shoreline = 
     }
   }
 
+  // Measured land cover: average every pixel whose center falls in the cell.
+  const cover = landcover && measureCover(landcover, proj, { x0, y0, cols, rows });
+
   // Keep land cells plus a margin of water around the shore.
   const isLand = (k) => landFrac[k] >= 0.5 && hydroFrac[k] < 0.5;
   const keep = new Uint8Array(all);
@@ -147,6 +152,8 @@ export function buildGrid({ boundary, parks = [], hydrography = [], shoreline = 
     elevation: new Float32Array(N),
     inFloodplain: new Uint8Array(N), onShoreline: new Uint8Array(N),
     land: new Float32Array(N),
+    // Shares of the cell measured from the air (NaN where not measured).
+    tree: new Float32Array(N).fill(NaN), grass: new Float32Array(N).fill(NaN), paved: new Float32Array(N).fill(NaN),
     existing: new Uint8Array(N),
   };
   const index = new Int32Array(all).fill(-1);
@@ -159,6 +166,11 @@ export function buildGrid({ boundary, parks = [], hydrography = [], shoreline = 
     cells.land[i] = landFrac[k];
     cells.inFloodplain[i] = floodFrac[k] >= 0.25 ? 1 : 0;
     cells.onShoreline[i] = isLand(k) && shore[k] ? 1 : 0;
+    if (cover && cover.n[k]) {
+      cells.tree[i] = cover.tree[k] / cover.n[k];
+      cells.grass[i] = cover.grass[k] / cover.n[k];
+      cells.paved[i] = cover.paved[k] / cover.n[k];
+    }
 
     let elev = NaN;
     if (elevation) {
@@ -190,7 +202,7 @@ export function buildGrid({ boundary, parks = [], hydrography = [], shoreline = 
     let parkTotal = 0, best = 0;
     for (let j = 0; j < pc.length; j++) { parkTotal += pc[j]; if (pc[j] > pc[best]) best = j; }
     if (parkTotal / (SUB * SUB) >= 0.5 * landFrac[k]) {
-      let type = PARK_CLASSES[best];
+      let type = measured(PARK_CLASSES[best], i);
       // Natural areas at the water's edge in the floodplain are tidal marsh.
       if ((type === 'forest' || type === 'meadow') && cells.inFloodplain[i] && cells.elevation[i] < 6) type = 'salt-marsh';
       return TYPE_INDEX[type];
@@ -211,10 +223,28 @@ export function buildGrid({ boundary, parks = [], hydrography = [], shoreline = 
       case 'ind': return TYPE_INDEX[`ind-${size}`];
       case 'trans': return TYPE_INDEX[cells.onShoreline[i] ? 'port' : 'rail'];
       case 'parking': return TYPE_INDEX.parking;
-      case 'open': return TYPE_INDEX.park;
-      case 'vacant': return TYPE_INDEX.meadow;
+      case 'open': return TYPE_INDEX[measured('park', i)];
+      case 'vacant': return TYPE_INDEX[measured('meadow', i)];
     }
     return TYPE_INDEX.street;
+  }
+
+  // Open space as it looks from the air: a park's wooded parts are forest and
+  // its courts and playgrounds are plaza, and most "vacant" lots are paved.
+  function measured(type, i) {
+    const tree = cells.tree[i], grass = cells.grass[i], paved = cells.paved[i];
+    if (Number.isNaN(tree)) return type;
+    switch (type) {
+      case 'park': case 'meadow':
+        if (tree >= COVER.forest) return 'forest';
+        if (paved >= COVER.paved) return type === 'park' ? 'plaza' : 'parking';
+        return type;
+      case 'forest':
+        if (paved >= COVER.paved) return 'plaza';
+        if (tree < COVER.openForest && grass >= tree) return 'meadow';
+        return type;
+    }
+    return type;
   }
 
   let landSamples = 0;
@@ -231,6 +261,28 @@ export function buildGrid({ boundary, parks = [], hydrography = [], shoreline = 
     index,
     missingElevation,
   };
+}
+
+function measureCover({ bbox: [w, s, e, n], width, height, rgba }, proj, { x0, y0, cols, rows }) {
+  const all = cols * rows;
+  const out = { tree: new Float32Array(all), grass: new Float32Array(all), paved: new Float32Array(all), n: new Uint16Array(all) };
+  const dx = (e - w) / width, dy = (n - s) / height;
+  for (let py = 0; py < height; py++) {
+    const lat = n - (py + 0.5) * dy;
+    for (let px = 0; px < width; px++) {
+      const p = (py * width + px) * 4;
+      if (rgba[p] === 255) continue; // outside the city
+      const [x, y] = proj.toXY(w + (px + 0.5) * dx, lat);
+      const c = Math.floor((x - x0) / CELL), r = Math.floor((y - y0) / CELL);
+      if (c < 0 || r < 0 || c >= cols || r >= rows) continue;
+      const k = r * cols + c;
+      out.tree[k] += rgba[p] / 250;
+      out.grass[k] += rgba[p + 1] / 250;
+      out.paved[k] += rgba[p + 2] / 250;
+      out.n[k]++;
+    }
+  }
+  return out;
 }
 
 function isArea(f) {

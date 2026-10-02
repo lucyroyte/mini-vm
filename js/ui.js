@@ -8,6 +8,7 @@ export const $ = (sel) => document.querySelector(sel);
 
 const fmt = (v, d = 0) => v.toLocaleString('en-US', { maximumFractionDigits: d, minimumFractionDigits: d });
 const signed = (v, d = 0) => (v > 0 ? '+' : v < 0 ? '−' : '±') + fmt(Math.abs(v), d);
+const pct = (v) => `${Math.round(100 * v)}%`;
 const esc = (s) => String(s).replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
 
 export function renderPalette(el, active, onPick) {
@@ -99,6 +100,7 @@ export function renderInspector(world, vision, results, i) {
     ['Elevation', `${fmt(c.elevation[i], 1)} ft`],
     ['In floodplain', c.inFloodplain[i] ? 'Yes' : 'No'],
     ['On shoreline', c.onShoreline[i] ? 'Yes' : 'No'],
+    ['Measured cover', c.tree?.[i] >= 0 ? `${pct(c.tree[i])} trees, ${pct(c.grass[i])} grass, ${pct(c.paved[i])} paved or roofed` : 'Not measured'],
     ['Existing type', swatch(ex)],
     ['Current type', swatch(cur) + (ex === cur ? '' : ' <em>(changed)</em>')],
     ['Coastal flood', p.coastalDepth[i] > 0 ? `${fmt(p.coastalDepth[i], 1)} ft deep` : 'Dry'],
@@ -129,6 +131,10 @@ export function renderLegend(mode) {
   const scale = SCALES[mode];
   if (!scale) { el.hidden = true; return; }
   el.hidden = false;
+  if (scale.swatches) {
+    el.innerHTML = `<div class="legend-title">${scale.label}</div>${scale.swatches.map(([name, color]) => `<div><span class="swatch" style="background:${color}"></span>${name}</div>`).join('')}`;
+    return;
+  }
   const stops = scale.stops;
   el.innerHTML = `
     <div class="legend-title">${scale.label}</div>

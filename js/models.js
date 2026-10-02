@@ -115,6 +115,14 @@ function coastal(world, types, seaLevelRise) {
   return depth; // feet
 }
 
+// A cell's paved and planted shares: as measured from the air where a vision
+// leaves the cell as it is today, and its type's typical values where it changes.
+function surface(world, types, i) {
+  const c = world.cells;
+  if (types[i] !== c.existing[i] || !(c.paved?.[i] >= 0)) return ECOSYSTEMS[types[i]];
+  return { imperviousness: c.paved[i], vegetation: c.tree[i] + c.grass[i] };
+}
+
 // Stormwater flooding: rain that the ground, plants and sewers can't take runs
 // downhill and ponds in low spots.
 function stormwater(world, types, rainfall) {
@@ -127,7 +135,8 @@ function stormwater(world, types, rainfall) {
   for (let i = 0; i < count; i++) {
     const t = ECOSYSTEMS[types[i]];
     if (isWater(i)) { spare[i] = Infinity; continue; }
-    const capacity = t.storage + (1 - t.imperviousness) * SOIL_INFILTRATION + SEWER_CAPACITY * t.sewered * t.imperviousness;
+    const { imperviousness } = surface(world, types, i);
+    const capacity = t.storage + (1 - imperviousness) * SOIL_INFILTRATION + SEWER_CAPACITY * t.sewered * imperviousness;
     flow[i] = Math.max(0, rainfall - capacity);
     spare[i] = Math.max(0, capacity - rainfall);
   }
@@ -170,7 +179,8 @@ function heat(world, types) {
   const raw = new Float32Array(N);
   for (let i = 0; i < N; i++) {
     const t = ECOSYSTEMS[types[i]];
-    raw[i] = t.id === 'water' ? -4 : 10 * t.imperviousness - 8 * t.vegetation + (t.size === 'high' ? 1 : 0);
+    const { imperviousness, vegetation } = surface(world, types, i);
+    raw[i] = t.id === 'water' ? -4 : 10 * imperviousness - 8 * vegetation + (t.size === 'high' ? 1 : 0);
   }
   // Cool parks and water spill over onto their neighbors, and vice versa.
   const out = new Float32Array(N);
