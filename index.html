@@ -42,6 +42,7 @@
         <option value="flood">Flooding</option>
         <option value="heat">Heat</option>
         <option value="habitat">Habitat</option>
+        <option value="residents">Residents</option>
         <option value="elevation">Elevation</option>
         <option value="cover">Trees and paving (aerial)</option>
       </select>
@@ -54,6 +55,7 @@
         <label><input type="checkbox" data-layer="parks"> Parks properties</label>
         <label><input type="checkbox" data-layer="hydrography"> Hydrography</label>
         <label><input type="checkbox" data-layer="shoreline"> Shoreline</label>
+        <label><input type="checkbox" data-layer="floodnet"> FloodNet flood sensors</label>
         <label><input type="checkbox" data-layer="buildings" checked> Building footprints (zoom in)</label>
         <label><input type="checkbox" data-layer="grid" checked> Cell grid (zoom in)</label>
       </div>
@@ -79,6 +81,12 @@
         <div id="metrics"></div>
       </section>
 
+      <section class="people-card">
+        <h3>People</h3>
+        <p class="note">Who lives with the flooding and heat, from the 2020 Census. Not part of the climate score.</p>
+        <table id="people"></table>
+      </section>
+
       <section>
         <h3>Climate scenario</h3>
         <label class="field">Rainfall intensity <output id="rain-out"></output>
@@ -89,7 +97,7 @@
         <label class="field">Sea level rise
           <select id="slr"></select>
         </label>
-        <p class="note">Flooding is modeled for a 100-year coastal storm on top of sea level rise, and a one-hour rain at the chosen intensity.</p>
+        <p class="note">Flooding is modeled for a 100-year coastal storm on top of sea level rise, and a one-hour rain at the chosen intensity. Stormwater starts from NYC's Stormwater Flood Maps.</p>
       </section>
 
       <section>

@@ -1,8 +1,8 @@
 // The MapLibre map: basemap, the cell grid, and the reference data layers.
 
 import { ECOSYSTEMS } from './ecosystems.js';
-import { cellBoundary } from './grid.js';
-import { loadBuildingsInView } from './data.js';
+import { cellBoundary, HA_PER_CELL } from './grid.js';
+import { loadBuildingsInView, loadFloodNet } from './data.js';
 
 /* global maplibregl */
 
@@ -46,6 +46,7 @@ function addLayers(map, world) {
   map.addSource('shoreline', { type: 'geojson', data: fc(world.layers.shoreline) });
   map.addSource('buildings', { type: 'geojson', data: empty() });
   map.addSource('cursor', { type: 'geojson', data: empty() });
+  map.addSource('floodnet', { type: 'geojson', data: empty() });
 
   map.addLayer({
     id: 'cells', type: 'fill', source: 'cells',
@@ -75,6 +76,29 @@ function addLayers(map, world) {
     id: 'shoreline', type: 'line', source: 'shoreline', layout: { visibility: 'none' },
     paint: { 'line-color': '#0a3d62', 'line-width': 1.5 },
   });
+  // FloodNet sensors: white if they have never measured 4 in of water, darker
+  // blue the more often they have.
+  map.addLayer({
+    id: 'floodnet', type: 'circle', source: 'floodnet', layout: { visibility: 'none' },
+    paint: {
+      'circle-radius': ['interpolate', ['linear'], ['zoom'], 11, 4, 16, 8],
+      'circle-color': ['step', ['get', 'over4'], '#ffffff', 1, '#9ecae1', 3, '#3182bd', 10, '#08306b'],
+      'circle-stroke-color': '#08306b', 'circle-stroke-width': 1.2,
+    },
+  });
+  let floodnetLoaded = false;
+  map.showFloodNet = async () => {
+    if (floodnetLoaded) return;
+    floodnetLoaded = true;
+    try { map.getSource('floodnet').setData(await loadFloodNet()); } catch (err) { floodnetLoaded = false; console.warn('FloodNet unavailable:', err.message); }
+  };
+  const popup = new maplibregl.Popup({ closeButton: false, closeOnClick: false });
+  map.on('mouseenter', 'floodnet', (e) => {
+    const p = e.features[0].properties;
+    popup.setLngLat(e.lngLat).setHTML(`<strong>${p.name}</strong><br>FloodNet ${p.kind} sensor since ${p.since}<br>${p.floods} floods measured, ${p.over4} of 4 in or more; deepest ${(+p.deepest).toFixed(1)} in`).addTo(map);
+  });
+  map.on('mouseleave', 'floodnet', () => popup.remove());
+
   map.addLayer({
     id: 'boundary', type: 'line', source: 'boundary',
     paint: { 'line-color': '#222222', 'line-width': 1.5, 'line-opacity': 0.8 },
@@ -125,7 +149,8 @@ const hex = (c) => [1, 3, 5].map((i) => parseInt(c.slice(i, i + 2), 16));
 
 export const SCALES = {
   flood: { label: 'Flood depth', unit: 'ft', stops: [[0, '#f2f2f2'], [0.33, '#c6dbef'], [1, '#6baed6'], [3, '#2171b5'], [8, '#08306b']] },
-  heat: { label: 'Heat above a fully green landscape', unit: '°F', stops: [[-6, '#2c7bb6'], [0, '#ffffbf'], [4, '#fdae61'], [9, '#d7191c']] },
+  heat: { label: 'Summer surface temperature', unit: '°F', stops: [[85, '#2c7bb6'], [95, '#ffffbf'], [101, '#fdae61'], [108, '#d7191c']] },
+  residents: { label: 'Residents per hectare', unit: '/ha', stops: [[0, '#f7f4ea'], [50, '#fdd49e'], [200, '#fc8d59'], [500, '#d7301f'], [1000, '#7f0000']] },
   habitat: { label: 'Habitat value', unit: '/10', stops: [[0, '#f7f4ea'], [3, '#c2e699'], [6, '#41ab5d'], [10, '#00441b']] },
   elevation: { label: 'Elevation', unit: 'ft', stops: [[-5, '#2b5d8a'], [0, '#a6d1e6'], [10, '#f1eebd'], [40, '#c9a46b'], [150, '#7a4b2a']] },
   cover: {
@@ -156,11 +181,12 @@ export function paintCells(map, world, mode, vision, results) {
       case 'flood': {
         const p = results.perCell;
         if (ECOSYSTEMS[vision.current[i]].id === 'water') return '#dfe9f2';
-        const d = Math.max(p.coastalDepth[i], p.stormDepth[i] >= 4 ? p.stormDepth[i] / 12 : 0);
+        const d = Math.max(p.coastalDepth[i], p.stormFrac[i] >= 0.05 ? p.stormDepth[i] / 12 : 0);
         return ramp(SCALES.flood.stops, d);
       }
       case 'heat': return ramp(SCALES.heat.stops, results.perCell.heat[i]);
       case 'habitat': return ramp(SCALES.habitat.stops, results.perCell.habitat[i]);
+      case 'residents': return ramp(SCALES.residents.stops, results.perCell.residents[i] / HA_PER_CELL);
       case 'elevation': return ramp(SCALES.elevation.stops, world.cells.elevation[i]);
       case 'cover': return ECOSYSTEMS[existing[i]].id === 'water' ? '#dfe9f2' : coverColor(world.cells, i);
       default: return ECOSYSTEMS[vision.current[i]].color;
