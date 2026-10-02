@@ -11,20 +11,86 @@ const signed = (v, d = 0) => (v > 0 ? '+' : v < 0 ? '−' : '±') + fmt(Math.abs
 const pct = (v) => `${Math.round(100 * v)}%`;
 const esc = (s) => String(s).replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
 
+// Labels for ecosystem values. Any other numeric field an ecosystem defines is
+// shown too, under its own name, so new model parameters appear without edits here.
+const VALUE_INFO = {
+  imperviousness: { label: 'Impervious', title: 'Share of the surface water can\'t soak into', share: true },
+  vegetation: { label: 'Vegetation', title: 'Vegetation cover', share: true },
+  habitat: { label: 'Habitat', unit: '/10', title: 'Habitat value, 0 to 10', digits: 1 },
+  carbon: { label: 'Carbon', unit: 't/ha', title: 'Carbon stored in soil and plants, tonnes per hectare' },
+  storage: { label: 'Storage', unit: 'in', title: 'Inches of rain held on site during a storm', digits: 1 },
+  sewered: { label: 'Sewered', title: 'Share of the surface drained by storm sewers', share: true },
+  barrier: { label: 'Barrier', unit: 'ft', title: 'Feet a shoreline structure raises the edge above grade', digits: 1 },
+  attenuation: { label: 'Surge cut', unit: 'ft/100 m', title: 'Feet of storm surge absorbed per 100 m crossed', digits: 2 },
+  shade: { label: 'Shade', title: 'Share of the ground shaded by trees', share: true },
+  albedo: { label: 'Albedo', title: 'Share of sunlight reflected', share: true },
+  kc: { label: 'Water use', unit: '× lawn', title: 'Crop coefficient: evapotranspiration relative to a reference lawn', digits: 2 },
+};
+
+export const valueFields = () => {
+  const keys = [];
+  for (const t of ECOSYSTEMS) for (const [k, v] of Object.entries(t)) if (typeof v === 'number' && !keys.includes(k)) keys.push(k);
+  const order = Object.keys(VALUE_INFO);
+  return keys.sort((a, b) => (order.indexOf(a) + 1 || 99) - (order.indexOf(b) + 1 || 99)).map((key) => {
+    const info = VALUE_INFO[key] ?? { label: key, title: key };
+    const max = Math.max(...ECOSYSTEMS.map((t) => t[key] ?? 0));
+    return { key, ...info, max };
+  });
+};
+
+const fmtValue = (f, v) => (v == null ? '–' : f.share ? pct(v) : fmt(v, Number.isInteger(v) ? 0 : f.digits ?? 2));
+
+let paletteView = 'brushes';
+
 export function renderPalette(el, active, onPick) {
-  el.innerHTML = CATEGORIES.map((cat) => `
-    <div class="cat">
-      <h4>${cat.name}</h4>
-      ${ECOSYSTEMS.map((t, i) => (t.category === cat.id ? `
-        <button data-type="${i}" class="type-button ${i === active ? 'active' : ''}"
-          title="${esc(describeType(t))}">
-          <span class="swatch" style="background:${t.color}"></span>${esc(t.name)}
-        </button>` : '')).join('')}
-    </div>`).join('');
+  const tabs = `
+    <div class="palette-tabs" role="tablist">
+      ${[['brushes', 'Brushes'], ['values', 'Compare values']].map(([v, label]) => `
+        <button role="tab" data-view="${v}" aria-selected="${paletteView === v}" class="${paletteView === v ? 'active' : ''}">${label}</button>`).join('')}
+    </div>`;
+  el.innerHTML = tabs + (paletteView === 'values' ? valuesTable(active) : `
+    <div class="palette-grid">${CATEGORIES.map((cat) => `
+      <div class="cat">
+        <h4>${cat.name}</h4>
+        ${ECOSYSTEMS.map((t, i) => (t.category === cat.id ? `
+          <button data-type="${i}" class="type-button ${i === active ? 'active' : ''}"
+            title="${esc(describeType(t))}">
+            <span class="swatch" style="background:${t.color}"></span>${esc(t.name)}
+          </button>` : '')).join('')}
+      </div>`).join('')}
+    </div>`);
   el.onclick = (e) => {
+    const tab = e.target.closest('[data-view]');
+    // Stop the click here: re-rendering detaches the tab, and the document's
+    // outside-click handler would then close the palette.
+    if (tab) { e.stopPropagation(); paletteView = tab.dataset.view; renderPalette(el, active, onPick); return; }
     const b = e.target.closest('[data-type]');
     if (b) onPick(+b.dataset.type);
   };
+}
+
+function valuesTable(active) {
+  const fields = valueFields();
+  const head = fields.map((f) => `<th scope="col" title="${esc(f.title)}">${esc(f.label)}${f.unit ? `<small>${esc(f.unit)}</small>` : ''}</th>`).join('');
+  const rows = CATEGORIES.map((cat) => `
+    <tr class="cat-row"><th scope="rowgroup" colspan="${fields.length + 1}">${cat.name}</th></tr>
+    ${ECOSYSTEMS.map((t, i) => (t.category === cat.id ? `
+      <tr data-type="${i}" class="${i === active ? 'active' : ''}" title="Paint with ${esc(t.name)}">
+        <th scope="row"><span class="swatch" style="background:${t.color}"></span>${esc(t.name)}</th>
+        ${fields.map((f) => {
+          const v = t[f.key];
+          const w = f.max > 0 && v > 0 ? Math.round((100 * v) / f.max) : 0;
+          return `<td style="--w:${w}%">${fmtValue(f, v)}</td>`;
+        }).join('')}
+      </tr>` : '')).join('')}`).join('');
+  return `
+    <div class="values-wrap">
+      <table class="values">
+        <thead><tr><th scope="col">Ecosystem</th>${head}</tr></thead>
+        <tbody>${rows}</tbody>
+      </table>
+    </div>
+    <p class="note">Bars compare each value with the highest in its column. Hover a heading for what it means; click a row to paint with it.</p>`;
 }
 
 export function describeType(t) {
