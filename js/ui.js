@@ -26,7 +26,7 @@ const VALUE_INFO = {
   vegetation: {
     label: 'Vegetation', name: 'Vegetation cover', share: true,
     about: 'The share of the ground covered by trees, shrubs, grass or other plants. Plants shade and cool the ground and help rain soak in.',
-    used: 'Heat: greener places stay cooler. Where a vision leaves a cell as it is, the tree and grass cover measured from 2017 aerial imagery is used instead.',
+    used: 'Heat: a cell that is at least half planted counts as green space, which cools the blocks around it up to about 450 m away. Where a vision leaves a cell as it is, the tree and grass cover measured from 2017 aerial imagery is used instead.',
   },
   habitat: {
     label: 'Habitat', unit: '/10', name: 'Habitat value', digits: 1,
@@ -125,7 +125,7 @@ function valuesTable(active) {
       ${esc(f.label)} <span class="info-icon" aria-hidden="true">i</span>${f.unit ? `<small>${esc(f.unit)}</small>` : ''}
     </button></th>`).join('');
   const rows = CATEGORIES.map((cat) => `
-    <tr class="cat-row"><th scope="rowgroup" colspan="${fields.length + 1}">${cat.name}</th></tr>
+    <tr class="cat-row"><th scope="rowgroup" colspan="${fields.length + 1}"><span>${cat.name}</span></th></tr>
     ${ECOSYSTEMS.map((t, i) => (t.category === cat.id ? `
       <tr data-type="${i}" class="${i === active ? 'active' : ''}" title="Paint with ${esc(t.name)}">
         <th scope="row"><span class="swatch" style="background:${t.color}"></span>${esc(t.name)}</th>
@@ -153,7 +153,7 @@ function infoBox(f) {
   const top = ranked.slice(0, 3).map((t) => `${esc(t.name)} ${fmtValue(f, t[f.key])}`).join(', ');
   const lowest = ranked[ranked.length - 1][f.key];
   const low = ranked.filter((t) => t[f.key] === lowest);
-  const lowNames = low.length > 2 ? `${esc(low[0].name)} and ${low.length - 1} others` : low.map((t) => esc(t.name)).join(' and ');
+  const lowNames = esc(low[0].name) + (low.length > 1 ? ` and ${low.length - 1} other${low.length > 2 ? 's' : ''}` : '');
   return `
     <strong>${esc(f.name ?? f.label)}${f.unit ? ` (${esc(f.unit)})` : ''}</strong>
     ${f.about ? `<p>${esc(f.about)}</p>` : ''}

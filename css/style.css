@@ -81,7 +81,12 @@ table.values thead th {
   position: sticky; top: 0; background: var(--surface); z-index: 1;
   text-align: right; vertical-align: bottom; font-weight: 600; border-bottom: 1px solid var(--line);
 }
-table.values thead th:first-child { text-align: left; }
+table.values thead th:first-child { text-align: left; left: 0; z-index: 2; }
+/* Keep ecosystem names in view when the table scrolls sideways. */
+table.values tbody th[scope="row"] { position: sticky; left: 0; background: var(--surface); }
+table.values tr[data-type]:hover th[scope="row"] { background: #f0f3f5; }
+table.values tr.active th[scope="row"] { background: #e3f1e9; }
+table.values tr.cat-row span { position: sticky; left: 6px; }
 .info-head { border: 0; background: none; padding: 2px; font-weight: 600; text-align: right; cursor: help; }
 .info-head:hover { color: var(--accent); }
 .info-icon {
