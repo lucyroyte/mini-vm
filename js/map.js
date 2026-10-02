@@ -2,7 +2,7 @@
 
 import { ECOSYSTEMS } from './ecosystems.js';
 import { cellBoundary, HA_PER_CELL } from './grid.js';
-import { loadBuildingsInView } from './data.js';
+import { loadBuildingsInView, loadFloodNet } from './data.js';
 
 /* global maplibregl */
 
@@ -46,6 +46,7 @@ function addLayers(map, world) {
   map.addSource('shoreline', { type: 'geojson', data: fc(world.layers.shoreline) });
   map.addSource('buildings', { type: 'geojson', data: empty() });
   map.addSource('cursor', { type: 'geojson', data: empty() });
+  map.addSource('floodnet', { type: 'geojson', data: empty() });
 
   map.addLayer({
     id: 'cells', type: 'fill', source: 'cells',
@@ -75,6 +76,29 @@ function addLayers(map, world) {
     id: 'shoreline', type: 'line', source: 'shoreline', layout: { visibility: 'none' },
     paint: { 'line-color': '#0a3d62', 'line-width': 1.5 },
   });
+  // FloodNet sensors: white if they have never measured 4 in of water, darker
+  // blue the more often they have.
+  map.addLayer({
+    id: 'floodnet', type: 'circle', source: 'floodnet', layout: { visibility: 'none' },
+    paint: {
+      'circle-radius': ['interpolate', ['linear'], ['zoom'], 11, 4, 16, 8],
+      'circle-color': ['step', ['get', 'over4'], '#ffffff', 1, '#9ecae1', 3, '#3182bd', 10, '#08306b'],
+      'circle-stroke-color': '#08306b', 'circle-stroke-width': 1.2,
+    },
+  });
+  let floodnetLoaded = false;
+  map.showFloodNet = async () => {
+    if (floodnetLoaded) return;
+    floodnetLoaded = true;
+    try { map.getSource('floodnet').setData(await loadFloodNet()); } catch (err) { floodnetLoaded = false; console.warn('FloodNet unavailable:', err.message); }
+  };
+  const popup = new maplibregl.Popup({ closeButton: false, closeOnClick: false });
+  map.on('mouseenter', 'floodnet', (e) => {
+    const p = e.features[0].properties;
+    popup.setLngLat(e.lngLat).setHTML(`<strong>${p.name}</strong><br>FloodNet ${p.kind} sensor since ${p.since}<br>${p.floods} floods measured, ${p.over4} of 4 in or more; deepest ${(+p.deepest).toFixed(1)} in`).addTo(map);
+  });
+  map.on('mouseleave', 'floodnet', () => popup.remove());
+
   map.addLayer({
     id: 'boundary', type: 'line', source: 'boundary',
     paint: { 'line-color': '#222222', 'line-width': 1.5, 'line-opacity': 0.8 },
@@ -142,7 +166,7 @@ export function paintCells(map, world, mode, vision, results) {
       case 'flood': {
         const p = results.perCell;
         if (ECOSYSTEMS[vision.current[i]].id === 'water') return '#dfe9f2';
-        const d = Math.max(p.coastalDepth[i], p.stormDepth[i] >= 4 ? p.stormDepth[i] / 12 : 0);
+        const d = Math.max(p.coastalDepth[i], p.stormFrac[i] >= 0.05 ? p.stormDepth[i] / 12 : 0);
         return ramp(SCALES.flood.stops, d);
       }
       case 'heat': return ramp(SCALES.heat.stops, results.perCell.heat[i]);

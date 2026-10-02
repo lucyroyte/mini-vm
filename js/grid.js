@@ -41,7 +41,7 @@ export const sizeForFloors = (f) => (f >= 13 ? 'high' : f >= 5 ? 'mid' : 'low');
 // common street trees (a 12 in London plane spreads about 25 ft).
 const crownFeet = (dbh) => Math.min(60, 5 + 1.6 * dbh);
 
-export function buildGrid({ boundary, parks = [], hydrography = [], shoreline = [], floodplain = [], wetlands = [], lots = [], elevation = null, surfaceTemp = null, trees = [], census = null, hvi = null }) {
+export function buildGrid({ boundary, parks = [], hydrography = [], shoreline = [], floodplain = [], wetlands = [], lots = [], elevation = null, surfaceTemp = null, stormwater = null, trees = [], census = null, hvi = null }) {
   const [w, s, e, n] = bboxOf(boundary);
   const proj = makeProjection((w + e) / 2, (s + n) / 2);
   const [bx0, by0] = proj.toXY(w, s);
@@ -173,6 +173,10 @@ export function buildGrid({ boundary, parks = [], hydrography = [], shoreline = 
     hvi: new Float32Array(N), // Heat Vulnerability Index of the ZIP code, 1–5 (0 = unknown)
     canopy: new Float32Array(N), // share of the cell shaded by street trees
     surfaceTemp: new Float32Array(N).fill(NaN), // °F, summer surface temperature measured by Landsat
+    // NYC's Stormwater Flood Maps: share of the cell flooded, and average depth
+    // in inches where it is, for the moderate (2.13 in/hr) and extreme (3.66 in/hr) storms.
+    stormFrac: [new Float32Array(N), new Float32Array(N)],
+    stormDepth: [new Float32Array(N), new Float32Array(N)],
   };
   const index = new Int32Array(all).fill(-1);
   let missingElevation = 0;
@@ -211,6 +215,20 @@ export function buildGrid({ boundary, parks = [], hydrography = [], shoreline = 
         if (Number.isFinite(v)) { sum += v; m++; }
       }
       if (m) cells.surfaceTemp[i] = sum / m;
+    }
+
+    if (stormwater && isLand(k)) {
+      // A 5 × 5 sample of the 8 m flood maps. Shallow flooding (4 in–1 ft)
+      // counts as 8 in deep, deep flooding (over 1 ft) as 18 in.
+      for (let storm = 0; storm < 2; storm++) {
+        let wet = 0, depth = 0;
+        for (let fy = 0.1; fy < 1; fy += 0.2) for (let fx = 0.1; fx < 1; fx += 0.2) {
+          const v = stormwater(...proj.toLonLat(x0 + (c + fx) * CELL, y0 + (r + fy) * CELL), storm);
+          if (v) { wet++; depth += v === 1 ? 8 : 18; }
+        }
+        cells.stormFrac[storm][i] = wet / 25;
+        cells.stormDepth[storm][i] = wet ? depth / wet : 0;
+      }
     }
 
     cells.existing[i] = classify(k, i);

@@ -101,7 +101,7 @@ export function renderInspector(world, vision, results, i) {
     ['Existing type', swatch(ex)],
     ['Current type', swatch(cur) + (ex === cur ? '' : ' <em>(changed)</em>')],
     ['Coastal flood', p.coastalDepth[i] > 0 ? `${fmt(p.coastalDepth[i], 1)} ft deep` : 'Dry'],
-    ['Stormwater', p.stormDepth[i] >= 0.5 ? `${fmt(p.stormDepth[i], 1)} in ponding` : 'Drains'],
+    ['Stormwater', p.stormFrac[i] ? `${fmt(100 * p.stormFrac[i])}% of the cell, ${fmt(p.stormDepth[i])} in deep` : 'Drains'],
     ['Summer surface', `${fmt(p.heat[i], 1)} °F` + (Number.isFinite(c.surfaceTemp[i]) ? ` (measured ${fmt(c.surfaceTemp[i], 1)} °F)` : ' (modeled)')],
     ['Street trees', `${fmt(100 * c.canopy[i])}% shade`],
     ['Residents', `${fmt(p.residents[i])}` + (Math.round(p.residents[i]) !== Math.round(c.residents[i]) ? ` <em>(${fmt(c.residents[i])} today)</em>` : '')],

@@ -1,0 +1,20 @@
+{
+ "bbox": [
+  -74.06,
+  40.565,
+  -73.83,
+  40.745
+ ],
+ "width": 2300,
+ "height": 2400,
+ "bands": {
+  "r": "Moderate Flood, 2.13 in/hr, current sea levels",
+  "g": "Extreme Flood, 3.66 in/hr, 2080 sea level rise"
+ },
+ "values": {
+  "0": "dry",
+  "1": "nuisance flooding, 4 in to 1 ft",
+  "2": "deep and contiguous flooding, over 1 ft"
+ },
+ "source": "NYC Stormwater Flood Maps, NYC Open Data 9i7c-xyvv"
+}

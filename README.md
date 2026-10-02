@@ -53,6 +53,8 @@ Keyboard shortcuts: I, B, R, F and E pick the tools; Esc closes the palette.
 | Elevation | [AWS Terrain Tiles](https://registry.opendata.aws/terrain-tiles/) (USGS 3DEP lidar) | Average cell elevation in feet |
 | Residents | US Census Bureau, *2020 Census Redistricting Data (PL 94-171)*, block population, in `data/census/` | Residents per cell, placed on homes using PLUTO's residential units |
 | Summer surface temperature | USGS *Landsat 8/9 Collection 2 surface temperature*, four clear summer days 2023–2025, in `data/heat/` | Today's heat map; the heat model adds a vision's changes to it |
+| Stormwater flooding | NYC Open Data, *NYC Stormwater Flood Maps* (moderate and extreme storms), in `data/flood/` | Today's stormwater flooding |
+| FloodNet sensors | [FloodNet](https://www.floodnet.nyc/) API (sensor locations) and NYC Open Data, *FloodNet: Street Flooding Events* | **FloodNet flood sensors** layer, loaded when turned on |
 | Street trees | NYC Open Data, *2015 Street Tree Census* | Tree shade per cell, for the heat model |
 | Heat vulnerability | NYC Open Data, *Heat Vulnerability Index Rankings* (DOHMH, by ZIP code) | Counting heat-vulnerable residents |
 
@@ -99,12 +101,12 @@ How the flood and heat models compare with open measurements of Brooklyn (cells 
 | --- | --- | --- |
 | Coastal flooding, 10 ft storm tide | FEMA/NPCC 100-year floodplain (2020s) | 76% of the floodplain flooded; 25% of modeled flooding outside it |
 | Coastal flooding, 11.3 ft (Sandy's peak at the Battery) | *Sandy Inundation Zone* | 84% of the zone flooded; 30% outside it |
-| Stormwater, 2.13 in/hr | DEP *NYC Stormwater Flood Map*, moderate flood, current sea levels | 19% of DEP's flooded area; 91% outside it, so stormwater results show where water collects on the terrain, not where the sewers back up |
+| Stormwater, 2.13 in/hr | [FloodNet](https://www.floodnet.nyc/) street flood sensors in Brooklyn (135), floods since 2020 | 55% of sensors in cells the model floods have measured 4 in or more of water, against 28% elsewhere. The model flags 65% of the sensors that flooded; the earlier terrain-only model flagged 20% |
 | Heat | Landsat summer surface temperature | r = 0.57 |
 
 - **Flooding** has two parts.
   - *Coastal*: a 100-year storm tide (10 ft NAVD88, plus sea level rise) spreads inland from open water across every cell lower than the water. A bulkhead, riprap, port edge or dune stops the water until it is overtopped. Wetlands and living shorelines absorb part of the surge as it crosses them.
-  - *Stormwater*: a one-hour storm at the chosen intensity. Each cell absorbs rain through its own storage, its pervious soil, and its storm sewers (1.75 in/hr on impervious surfaces). The excess runs downhill and ponds in low spots, and 4 inches or more of ponding counts as flooded.
+  - *Stormwater*: a one-hour storm at the chosen intensity. Today's flooding comes from NYC's *Stormwater Flood Maps*, which the city made with its sewer and surface model, for a moderate (2.13 in/hr) and an extreme (3.66 in/hr) storm. Other intensities are interpolated between them, from no flooding at 1.5 in/hr. Each cell keeps the share of it that floods and how deep. A vision changes the runoff: each cell absorbs rain through its own storage, its pervious soil, and its storm sewers (1.75 in/hr on impervious surfaces), and the excess runs downhill. Each flooded spot's extent and depth scale with the square root of the change in runoff reaching it, so green streets and wetlands uphill shrink it, and paving makes it worse.
   - The score is half property (flooded homes, businesses and streets; flooded wetlands and parks count only a little) and half residents flooded.
 - **Residents**: each 2020 Census block's population is split among its tax lots by residential units (blocks with no units, such as dorms and nursing homes, by floor area), then spread over the lots' cells. Where a vision changes a cell's type, the cell gets today's average residents for that type, so new housing adds people and replacing homes moves people out.
 - **Biodiversity**: each cell's habitat value is weighted by how many of its neighbors are good habitat, which rewards connected habitat. A bonus is added for the number of different habitat types.
@@ -121,7 +123,7 @@ css/style.css        styles
 js/main.js           loading, tools, and app wiring
 js/data.js           NYC Open Data (Socrata) loading
 js/elevation.js      terrain tiles → elevation
-js/landsat.js        summer surface temperature map
+js/rasters.js        summer surface temperature and stormwater flood maps
 js/geo.js            projection and polygon rasterization
 js/grid.js           Borough and Cell grid, land cover classification
 js/ecosystems.js     ecosystem types
@@ -134,6 +136,7 @@ js/model3d.js        3D buildings: three.js layer on the map
 data/3d/             3D buildings per community district (glTF) and models.json listing them
 data/census/         2020 Census population and housing units per Brooklyn block
 data/heat/           Landsat summer surface temperature (PNG) and its bounds
-tools/               converter from the NYC 3D Model (.3dm) to glTF, and the census and Landsat extractors
+data/flood/          NYC Stormwater Flood Maps for Brooklyn (PNG) and their bounds
+tools/               converter from the NYC 3D Model (.3dm) to glTF, and the census, Landsat and flood map extractors
 docs/semantic-model.md
 ```

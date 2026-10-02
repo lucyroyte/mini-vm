@@ -244,3 +244,34 @@ export async function loadLotAt(lon, lat, signal) {
   const ground = (f) => !f.properties.air_lot_flag && !f.properties.sub_lot_flag;
   return json.features.find(ground) ?? json.features[0] ?? null;
 }
+
+// FloodNet street flood sensors (NYU, CUNY and the City) in Brooklyn: where
+// they are, from FloodNet's API, and the floods each has measured since 2020,
+// from NYC Open Data. Loaded only when the layer is turned on.
+const FLOODNET_API = 'https://api.floodnet.nyc/api/rest/deployments/flood';
+export async function loadFloodNet() {
+  const [{ deployments }, events] = await Promise.all([
+    getJSON(FLOODNET_API),
+    getJSON(`${DOMAIN}/resource/aq7i-eu5q.json?${new URLSearchParams({
+      $select: 'sensor_name,count(*) as floods,max(max_depth_inches) as deepest,sum(case(max_depth_inches>=4,1,true,0)) as over4',
+      $where: "starts_with(sensor_name, 'BK')",
+      $group: 'sensor_name',
+      $limit: 5000,
+    })}`),
+  ]);
+  const byName = Object.fromEntries(events.map((e) => [e.sensor_name, e]));
+  return {
+    type: 'FeatureCollection',
+    features: deployments.filter((d) => d.name.startsWith('BK') && d.location).map((d) => {
+      const e = byName[d.name];
+      return {
+        type: 'Feature',
+        geometry: { type: 'Point', coordinates: d.location.coordinates },
+        properties: {
+          name: d.name.replace(/^BK - /, ''), kind: d.deploy_type, since: d.date_deployed?.slice(0, 10),
+          floods: +(e?.floods ?? 0), over4: +(e?.over4 ?? 0), deepest: +(e?.deepest ?? 0),
+        },
+      };
+    }),
+  };
+}

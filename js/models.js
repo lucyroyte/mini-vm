@@ -12,7 +12,6 @@ export const STORM_TIDE_FT = 10;
 export const SEWER_CAPACITY = 1.75; // in/hr, NYC storm sewer design standard
 const SOIL_INFILTRATION = 1.0; // in/hr for fully pervious ground
 const PONDING_FLOOD_IN = 4; // inches of standing water that counts as flooded
-const MAX_POND_DEPTH_IN = 18;
 const MIN_HABITAT_HA = 10; // a habitat type counts toward diversity once it covers this much land
 
 export const SCENARIO_PRESETS = {
@@ -82,7 +81,14 @@ export function prepare(world) {
   for (let i = 0; i < N; i++) sea[i] = world.cells.land[i] < 0.5 ? 1 : 0;
   // Downhill order for stormwater routing.
   const order = Int32Array.from({ length: N }, (_, i) => i).sort((a, b) => world.cells.elevation[b] - world.cells.elevation[a]);
-  world.model = { nbr, sea, order, cooling: coolingKernels(world) };
+  // Each cell's lowest lower neighbor, where its runoff goes.
+  const down = new Int32Array(N).fill(-1);
+  const { elevation } = world.cells;
+  for (let i = 0; i < N; i++) for (let k = 0; k < 8; k++) {
+    const j = nbr[i * 8 + k];
+    if (j >= 0 && elevation[j] < elevation[i] && (down[i] < 0 || elevation[j] < elevation[down[i]])) down[i] = j;
+  }
+  world.model = { nbr, sea, order, down, runoffToday: {}, cooling: coolingKernels(world) };
   world.model.heatToday = heat(world, world.cells.existing);
   // Average residents per cell of each type today, for cells a vision changes.
   const sum = new Float64Array(ECOSYSTEMS.length), n = new Float64Array(ECOSYSTEMS.length);
@@ -120,53 +126,64 @@ function coastal(world, types, seaLevelRise) {
   return depth; // feet
 }
 
-// Stormwater flooding: rain that the ground, plants and sewers can't take runs
-// downhill and ponds in low spots.
-function stormwater(world, types, rainfall) {
-  const { nbr, order } = world.model;
-  const { elevation, count } = world.cells;
+// Rain the ground, plants and sewers can't take, routed downhill: for each
+// cell, the inches of excess runoff (over one cell's area) that reach it.
+function runoff(world, types, rainfall) {
+  const { down, order } = world.model;
+  const { count } = world.cells;
   const spare = new Float32Array(count);
-  const flow = new Float32Array(count); // inches over one cell
-  const pond = new Float32Array(count);
-  const isWater = (i) => ECOSYSTEMS[types[i]].id === 'water';
+  const flow = new Float32Array(count);
   for (let i = 0; i < count; i++) {
     const t = ECOSYSTEMS[types[i]];
-    if (isWater(i)) { spare[i] = Infinity; continue; }
+    if (types[i] === WATER) { spare[i] = Infinity; continue; }
     const capacity = t.storage + (1 - t.imperviousness) * SOIL_INFILTRATION + SEWER_CAPACITY * t.sewered * t.imperviousness;
     flow[i] = Math.max(0, rainfall - capacity);
     spare[i] = Math.max(0, capacity - rainfall);
   }
   for (const i of order) {
     const out = Math.max(0, flow[i] - spare[i]);
-    if (!out) continue;
-    let low = -1;
-    for (let k = 0; k < 8; k++) {
-      const j = nbr[i * 8 + k];
-      if (j >= 0 && elevation[j] < elevation[i] && (low < 0 || elevation[j] < elevation[low])) low = j;
-    }
-    if (low >= 0) flow[low] += out;
-    else pond[i] += out;
+    if (out && down[i] >= 0) flow[down[i]] += out;
   }
-  // Spread each low spot's water over the lowest surrounding cells.
-  const depth = new Float32Array(count);
-  for (let s = 0; s < count; s++) {
-    let volume = pond[s];
-    if (volume <= 0) continue;
-    const seen = new Set([s]);
-    const heap = new MaxHeap(); // keyed by negative elevation: lowest first
-    heap.push(-elevation[s], s);
-    while (heap.size && volume > 0) {
-      const [, i] = heap.pop();
-      if (isWater(i)) break; // drains into a water body
-      const take = Math.min(volume, MAX_POND_DEPTH_IN - depth[i]);
-      if (take > 0) { depth[i] += take; volume -= take; }
-      for (let k = 0; k < 8; k++) {
-        const j = nbr[i * 8 + k];
-        if (j >= 0 && !seen.has(j) && elevation[j] < elevation[s] + 3) { seen.add(j); heap.push(-elevation[j], j); }
-      }
-    }
+  return flow;
+}
+
+// Stormwater flooding. Today's flooding comes from NYC's Stormwater Flood Maps,
+// made with the city's sewer and surface model, for a moderate (2.13 in/hr) and
+// an extreme (3.66 in/hr) storm; other intensities are interpolated, from no
+// flooding at 1.5 in/hr. A vision changes how much runoff reaches each flooded
+// spot, and the spot's flooding scales with it. Returns the share of each cell
+// flooded and the depth in inches where it is.
+const STORMS = [2.13, 3.66];
+const DRY_BELOW = 1.5; // in/hr
+const RUNOFF_FLOOR = 0.25; // inches of runoff, so tiny catchments don't swing wildly
+const MAX_STORM_DEPTH_IN = 36;
+function stormwater(world, types, rainfall) {
+  const { count, stormFrac, stormDepth, existing } = world.cells;
+  const cache = world.model.runoffToday;
+  if (cache.rainfall !== rainfall) Object.assign(cache, { rainfall, flow: runoff(world, existing, rainfall) });
+  const vision = types === existing ? cache.flow : runoff(world, types, rainfall);
+
+  // Interpolate between the mapped storms.
+  let a = 0, b = 0, t = 0, scale = 1;
+  if (rainfall <= STORMS[0]) { b = 0; t = Math.max(0, (rainfall - DRY_BELOW) / (STORMS[0] - DRY_BELOW)); a = -1; }
+  else if (rainfall <= STORMS[1]) { a = 0; b = 1; t = (rainfall - STORMS[0]) / (STORMS[1] - STORMS[0]); }
+  else { a = 1; b = 1; t = 0; scale = (rainfall - DRY_BELOW) / (STORMS[1] - DRY_BELOW); }
+  const frac = new Float32Array(count), depth = new Float32Array(count);
+  for (let i = 0; i < count; i++) {
+    const fa = a < 0 ? 0 : stormFrac[a][i], fb = stormFrac[b][i];
+    let f = fa + (fb - fa) * t;
+    if (!f || types[i] === WATER) continue;
+    const da = a < 0 ? stormDepth[b][i] : stormDepth[a][i], db = stormDepth[b][i] || da;
+    let d = (da || db) + (db - (da || db)) * t;
+    const ratio = scale * (vision[i] + RUNOFF_FLOOR) / (cache.flow[i] + RUNOFF_FLOOR);
+    // More water spreads wider and deeper; less shrinks both.
+    f = Math.min(1, f * Math.sqrt(ratio));
+    d = Math.min(MAX_STORM_DEPTH_IN, d * Math.sqrt(ratio));
+    if (d < PONDING_FLOOD_IN) continue;
+    frac[i] = f;
+    depth[i] = d;
   }
-  return depth; // inches
+  return { frac, depth };
 }
 
 // Heat: the InVEST Urban Cooling model (Natural Capital Project). Each cell's
@@ -332,7 +349,7 @@ export function runModels(world, types, scenario) {
   const { cells } = world;
   const N = cells.count;
   const coastalDepth = coastal(world, types, scenario.seaLevelRise);
-  const stormDepth = stormwater(world, types, scenario.rainfall);
+  const storm = stormwater(world, types, scenario.rainfall);
   const heatMap = surfaceTemperature(world, types, heat(world, types));
   const hab = habitat(world, types);
   const people = residents(world, types);
@@ -348,10 +365,11 @@ export function runModels(world, types, scenario) {
     land++;
     const p = people[i];
     population += p;
-    const c = coastalDepth[i] > 0, s = stormDepth[i] >= PONDING_FLOOD_IN;
-    if (c) coastalCells++;
-    if (s) stormCells++;
-    if (c || s) { flooded++; exposed += EXPOSURE[t.category]; floodedPeople += p; }
+    // Coastal flooding covers whole cells; stormwater, part of a cell.
+    const share = coastalDepth[i] > 0 ? 1 : storm.frac[i];
+    if (coastalDepth[i] > 0) coastalCells++;
+    stormCells += storm.frac[i];
+    if (share) { flooded += share; exposed += share * EXPOSURE[t.category]; floodedPeople += share * p; }
     heatSum += heatMap[i];
     heatPeople += heatMap[i] * p;
     if (heatMap[i] >= HEAT.hotF) { hot++; hotPeople += p; if (cells.hvi[i] >= 4) hotVulnerable += p; }
@@ -387,5 +405,5 @@ export function runModels(world, types, scenario) {
     },
   };
   const overall = (metrics.flooding.score + metrics.biodiversity.score + metrics.heat.score + metrics.carbon.score) / 4;
-  return { overall, metrics, perCell: { coastalDepth, stormDepth, heat: heatMap, habitat: hab.value, residents: people } };
+  return { overall, metrics, perCell: { coastalDepth, stormDepth: storm.depth, stormFrac: storm.frac, heat: heatMap, habitat: hab.value, residents: people } };
 }

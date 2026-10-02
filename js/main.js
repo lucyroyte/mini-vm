@@ -1,7 +1,7 @@
 import { ECOSYSTEMS, TYPE_INDEX } from './ecosystems.js';
 import { LAYERS, loadLayer, loadLots, loadLotAt, loadStreetTrees, loadHeatVulnerability, loadCensusBlocks } from './data.js';
 import { loadElevation, ELEVATION_SOURCE } from './elevation.js';
-import { loadSurfaceTemperature, SURFACE_TEMP_SOURCE } from './landsat.js';
+import { loadSurfaceTemperature, loadStormwaterMaps, SURFACE_TEMP_SOURCE, STORMWATER_SOURCE } from './rasters.js';
 import { buildGrid, cellAt, cellBoundary, cellsInPolygon, CELL, HA_PER_CELL } from './grid.js';
 import { bboxOf, containsPoint, polygonsOf } from './geo.js';
 import { prepare, runModels, SCENARIO_PRESETS } from './models.js';
@@ -13,7 +13,7 @@ import {
   $, renderPalette, renderScore, renderInspector, renderBorough, renderLegend, renderVisionList,
 } from './ui.js';
 
-const CACHE_KEY = 'world-v4';
+const CACHE_KEY = 'world-v5';
 const CACHE_DAYS = 30;
 
 // Loading ------------------------------------------------------------------------
@@ -59,7 +59,7 @@ async function loadWorld() {
       return null;
     }
   };
-  const [parks, hydrography, shoreline, floodplain, wetlands, lots, elevation, trees, hvi, census, surfaceTemp] = await Promise.all([
+  const [parks, hydrography, shoreline, floodplain, wetlands, lots, elevation, trees, hvi, census, surfaceTemp, stormwater] = await Promise.all([
     optional('parks', LAYERS.parks.label, (p) => loadLayer('parks', p, bbox)),
     optional('hydrography', LAYERS.hydrography.label, (p) => loadLayer('hydrography', p, bbox)),
     optional('shoreline', LAYERS.shoreline.label, (p) => loadLayer('shoreline', p, bbox)),
@@ -71,6 +71,7 @@ async function loadWorld() {
     optional('heatVulnerability', LAYERS.heatVulnerability.label, () => loadHeatVulnerability()),
     optional('census', 'Residents (2020 Census blocks)', () => loadCensusBlocks()),
     optional('surfaceTemp', 'Summer surface temperature (Landsat)', async () => ({ fn: await loadSurfaceTemperature(), source: SURFACE_TEMP_SOURCE, name: 'Landsat 8/9 surface temperature, summers 2023–2025' })),
+    optional('stormwater', 'Stormwater flood maps (NYC DEP)', async () => ({ fn: await loadStormwaterMaps(), source: STORMWATER_SOURCE, name: 'NYC Stormwater Flood Maps' })),
   ]);
   sources.push({ label: LAYERS.buildings.label, url: 'https://data.cityofnewyork.us/d/5zhs-2jue', name: 'Loaded for the map view when zoomed in', ok: true });
 
@@ -86,6 +87,7 @@ async function loadWorld() {
     lots: lots?.lots,
     elevation: elevation?.fn,
     surfaceTemp: surfaceTemp?.fn,
+    stormwater: stormwater?.fn,
     trees: trees?.trees,
     census: census?.blocks,
     hvi: hvi?.byZip,
@@ -223,6 +225,7 @@ function app(world, map) {
     const apply = () => {
       map.setLayoutProperty(input.dataset.layer, 'visibility', input.checked ? 'visible' : 'none');
       if (input.dataset.layer === 'buildings' && input.checked) map.refreshBuildings();
+      if (input.dataset.layer === 'floodnet' && input.checked) map.showFloodNet();
     };
     input.addEventListener('change', apply);
     apply();
