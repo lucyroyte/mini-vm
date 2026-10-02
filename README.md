@@ -28,6 +28,7 @@ The first load downloads Brooklyn's data from NYC Open Data, which takes about a
   - **Undo** and **Redo** are also on Ctrl+Z and Ctrl+Shift+Z.
   - **Show** switches the map between the vision, today, changes only, and the model results (flood depth, heat, habitat), plus elevation.
   - **Layers** toggles the reference data and the cell opacity.
+  - **3D** tilts the map and shows 3D buildings, so far for Downtown Brooklyn (Community District 2) only. Right-drag or Ctrl-drag to rotate. Painting still works while tilted.
 - **Side panel**
   - The overall climate score for the vision against today, and the four metric scores. On each bar, a tick marks today's value.
   - The climate scenario: rainfall intensity and sea level rise.
@@ -47,6 +48,7 @@ Keyboard shortcuts: I, B, R, F and E pick the tools; Esc closes the palette.
 | Shoreline | NYC Open Data, *Shoreline* | *On shoreline* flag |
 | FEMA floodplain | NYC Open Data, *Sea Level Rise Maps (2020s 100-year Floodplain)* (falls back to the *NYC Stormwater Flood Maps*) | *In floodplain* flag |
 | Building footprints | NYC Open Data, *Building Footprints* | Drawn on the map at zoom 15+, for the current view only |
+| 3D buildings | NYC Planning, *NYC 3D Model by Community District* (Rhino files, 2014 aerial survey) | The **3D** view; Community District 2 only so far |
 | Elevation | [AWS Terrain Tiles](https://registry.opendata.aws/terrain-tiles/) (USGS 3DEP lidar) | Average cell elevation in feet |
 
 NYC Open Data sometimes republishes a dataset under a new ID. `js/data.js` lists the known IDs for each layer, and falls back to a catalog search by name when none of them works. Each layer except the boundary is optional. If one fails to load, the grid is built from the rest, and the failure appears under *Data sources*.
@@ -112,5 +114,8 @@ js/vision.js         Vision: edits, undo, save
 js/map.js            MapLibre map and layers
 js/ui.js             side panel, palette, legend
 js/store.js          IndexedDB cache
+js/model3d.js        3D buildings: three.js layer on the map
+data/3d/             3D buildings per community district (glTF) and models.json listing them
+tools/               converter from the NYC 3D Model (.3dm) to glTF
 docs/semantic-model.md
 ```

@@ -1,0 +1,15 @@
+{
+  "districts": [
+    {
+      "name": "Brooklyn Community District 2",
+      "file": "bk02.glb",
+      "source": "NYC Planning, NYC 3D Model by Community District (NYC_3DModel_BK02.3dm, 2018 release of 2014 survey)",
+      "origin_lonlat": [
+        -73.98018147735858,
+        40.69411691363664
+      ],
+      "heights": "above footprint ground",
+      "triangles": 330682
+    }
+  ]
+}
