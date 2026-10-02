@@ -26,7 +26,7 @@ The application should represent the following entities:
 5. Climate scenario
 6. Climate score
 
-The borough is divided into a grid of cells, each 100 meters on a side. Every cell is assigned one ecosystem type, based on the dominant land cover in the real data. A vision is the set of changes a user makes to these cells. The climate models compare a vision against the existing borough.
+The borough is divided into a grid of cells, each 50 meters on a side. Every cell is assigned one ecosystem type, based on the dominant land cover in the real data. A vision is the set of changes a user makes to these cells. The climate models compare a vision against the existing borough.
 
 ## Entity attributes
 

@@ -1,12 +1,13 @@
 // A Vision is the set of changes a user makes to the existing borough.
 
 import { ECOSYSTEMS, TYPE_INDEX } from './ecosystems.js';
-import { cellAt, cellCenter } from './grid.js';
+import { CELL, cellAt, cellCenter, cellsInSquare } from './grid.js';
 
 const STORE = 'brooklyn-vision:visions';
 
 export class Vision {
-  constructor(world, { name = 'Untitled vision', created = new Date().toISOString(), changes = [] } = {}) {
+  // Visions saved before cellSize was recorded were painted on the 100 m grid.
+  constructor(world, { name = 'Untitled vision', created = new Date().toISOString(), changes = [], cellSize = 100 } = {}) {
     this.world = world;
     this.name = name;
     this.created = created;
@@ -15,9 +16,11 @@ export class Vision {
     this.redoStack = [];
     this.listeners = new Set();
     // Changes are stored by cell center, so saved visions survive a rebuilt grid.
+    // A change from a coarser grid fills every smaller cell inside the old one.
     for (const { center, type } of changes) {
-      const cell = cellAt(world, center[0], center[1]);
-      if (cell >= 0 && type in TYPE_INDEX) this.current[cell] = TYPE_INDEX[type];
+      if (!(type in TYPE_INDEX)) continue;
+      const cells = cellSize > CELL ? cellsInSquare(world, center[0], center[1], cellSize) : [cellAt(world, center[0], center[1])];
+      for (const cell of cells) if (cell >= 0) this.current[cell] = TYPE_INDEX[type];
     }
   }
 
@@ -72,6 +75,7 @@ export class Vision {
     return {
       name: this.name,
       created: this.created,
+      cellSize: CELL,
       changes: this.changedCells.map((i) => ({
         center: cellCenter(this.world, i).map((v) => +v.toFixed(6)),
         from: ECOSYSTEMS[this.world.cells.existing[i]].id,

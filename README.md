@@ -20,7 +20,7 @@ The first load downloads Brooklyn's data from NYC Open Data, which takes about a
 
 - **Toolbar**
   - **Inspect**: pan the map and click a cell to see its attributes.
-  - **Brush**: paint cells with the chosen ecosystem type. Brush widths are 100, 300, 500 or 900 m.
+  - **Brush**: paint cells with the chosen ecosystem type. Brush widths are 50, 150, 250, 450 or 850 m.
   - **Rectangle**: drag to fill a rectangle.
   - **Fill**: click to repaint a connected area of one type.
   - **Restore**: paint cells back to their existing type.
@@ -69,7 +69,7 @@ The entities from the semantic model live in these files:
 | Entity | Where |
 | --- | --- |
 | Borough | `world.borough` in `js/grid.js` (name, boundary, total area) |
-| Cell | `world.cells` in `js/grid.js`, stored as typed arrays: boundary from `cellBoundary()`, 10,000 m² area, elevation, in floodplain, on shoreline, existing type. The current type is in the vision. |
+| Cell | `world.cells` in `js/grid.js`, stored as typed arrays: boundary from `cellBoundary()`, 2,500 m² area, elevation, in floodplain, on shoreline, existing type. The current type is in the vision. |
 | Ecosystem type | `js/ecosystems.js`: category, name, imperviousness, vegetation cover, habitat value, carbon, color, plus building size and use for built types |
 | Vision | `js/vision.js`: name, list of changed cells, date created |
 | Climate scenario | `state.scenario` in `js/main.js`: rainfall intensity (in/hr) and sea level rise (ft) |

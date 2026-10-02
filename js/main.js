@@ -1,7 +1,7 @@
 import { ECOSYSTEMS, TYPE_INDEX } from './ecosystems.js';
 import { LAYERS, loadLayer, loadLots } from './data.js';
 import { loadElevation, ELEVATION_SOURCE } from './elevation.js';
-import { buildGrid, cellAt, cellBoundary } from './grid.js';
+import { buildGrid, cellAt, cellBoundary, CELL, HA_PER_CELL } from './grid.js';
 import { bboxOf } from './geo.js';
 import { prepare, runModels, SCENARIO_PRESETS } from './models.js';
 import { Vision, savedVisions, saveVision, deleteVision } from './vision.js';
@@ -12,7 +12,7 @@ import {
   $, renderPalette, renderScore, renderInspector, renderBorough, renderLegend, renderVisionList,
 } from './ui.js';
 
-const CACHE_KEY = 'world-v2';
+const CACHE_KEY = 'world-v3';
 const CACHE_DAYS = 30;
 
 // Loading ------------------------------------------------------------------------
@@ -69,7 +69,7 @@ async function loadWorld() {
   ]);
   sources.push({ label: LAYERS.buildings.label, url: 'https://data.cityofnewyork.us/d/5zhs-2jue', name: 'Loaded for the map view when zoomed in', ok: true });
 
-  const b = step('Building the 100 m grid');
+  const b = step(`Building the ${CELL} m grid`);
   await new Promise((r) => setTimeout(r, 30));
   const built = buildGrid({
     boundary: boundary.features,
@@ -106,7 +106,7 @@ async function loadWorld() {
 const state = {
   tool: 'inspect',
   type: TYPE_INDEX.forest,
-  brush: 1,
+  brush: 2,
   mode: 'vision',
   scenario: { rainfall: 2.13, seaLevelRise: 0.92 },
   selected: -1,
@@ -153,7 +153,7 @@ function app(world, map) {
 
   const updateVisionStats = () => {
     const n = vision.changedCells.length;
-    $('#vision-stats').textContent = n ? `${n.toLocaleString()} cells changed (${n.toLocaleString()} ha). Created ${new Date(vision.created).toLocaleString()}.` : 'No changes yet. Pick a tool and an ecosystem type, then paint on the map.';
+    $('#vision-stats').textContent = n ? `${n.toLocaleString()} cells changed (${(n * HA_PER_CELL).toLocaleString('en-US', { maximumFractionDigits: 2 })} ha). Created ${new Date(vision.created).toLocaleString()}.` : 'No changes yet. Pick a tool and an ecosystem type, then paint on the map.';
     $('#vision-name').value = vision.name;
     $('#undo').disabled = !vision.undoStack.length;
     $('#redo').disabled = !vision.redoStack.length;
@@ -196,6 +196,8 @@ function app(world, map) {
   $('#palette-toggle').addEventListener('click', () => togglePalette());
   setType(state.type);
 
+  // Brush sizes are radii in cells; the labels give the brush width on the ground.
+  $('#brush').innerHTML = [0, 1, 2, 4, 8].map((r) => `<option value="${r}" ${r === state.brush ? 'selected' : ''}>${(2 * r + 1) * CELL} m</option>`).join('');
   $('#brush').addEventListener('change', (e) => { state.brush = +e.target.value; });
   $('#undo').addEventListener('click', () => vision.undo());
   $('#redo').addEventListener('click', () => vision.redo());
@@ -274,7 +276,7 @@ function app(world, map) {
     const out = [start];
     const seen = new Set(out);
     const { cols, rows } = world.grid;
-    for (let k = 0; k < out.length && out.length < 20000; k++) {
+    for (let k = 0; k < out.length && out.length < 20000 / HA_PER_CELL; k++) {
       const i = out[k];
       for (const [dr, dc] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
         const r = world.cells.row[i] + dr, c = world.cells.col[i] + dc;

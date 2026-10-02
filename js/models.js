@@ -4,7 +4,7 @@
 // on a vision's types gives the vision.
 
 import { ECOSYSTEMS } from './ecosystems.js';
-import { neighbors } from './grid.js';
+import { neighbors, CELL, HA_PER_CELL } from './grid.js';
 
 // A design 100-year coastal storm: still-water level in feet (NAVD88) before
 // sea level rise, roughly FEMA's 1% annual chance level along Brooklyn's shore.
@@ -13,6 +13,7 @@ export const SEWER_CAPACITY = 1.75; // in/hr, NYC storm sewer design standard
 const SOIL_INFILTRATION = 1.0; // in/hr for fully pervious ground
 const PONDING_FLOOD_IN = 4; // inches of standing water that counts as flooded
 const MAX_POND_DEPTH_IN = 18;
+const MIN_HABITAT_HA = 10; // a habitat type counts toward diversity once it covers this much land
 
 export const SCENARIO_PRESETS = {
   rainfall: [
@@ -104,7 +105,7 @@ function coastal(world, types, seaLevelRise) {
       const type = ECOSYSTEMS[types[j]];
       const ground = elevation[j];
       if (l <= ground + type.barrier) continue; // stays dry, or the structure holds
-      const next = l - type.attenuation;
+      const next = l - type.attenuation * (CELL / 100); // attenuation is per 100 m crossed
       if (next <= ground || next <= level[j]) continue;
       level[j] = next;
       depth[j] = next - ground;
@@ -208,17 +209,17 @@ export function runModels(world, types, scenario) {
   const heatMap = heat(world, types);
   const hab = habitat(world, types);
 
-  let land = 0, flooded = 0, exposed = 0, coastalHa = 0, stormHa = 0;
+  let land = 0, flooded = 0, exposed = 0, coastalCells = 0, stormCells = 0;
   let heatSum = 0, hot = 0, habSum = 0, carbon = 0;
   const natural = new Map();
   for (let i = 0; i < N; i++) {
     const t = ECOSYSTEMS[types[i]];
-    carbon += t.carbon;
+    carbon += t.carbon * HA_PER_CELL;
     if (cells.land[i] < 0.5) continue;
     land++;
     const c = coastalDepth[i] > 0, s = stormDepth[i] >= PONDING_FLOOD_IN;
-    if (c) coastalHa++;
-    if (s) stormHa++;
+    if (c) coastalCells++;
+    if (s) stormCells++;
     if (c || s) { flooded++; exposed += EXPOSURE[t.category]; }
     heatSum += heatMap[i];
     if (heatMap[i] >= 6) hot++;
@@ -226,26 +227,27 @@ export function runModels(world, types, scenario) {
     if (t.habitat >= 4) natural.set(t.id, (natural.get(t.id) ?? 0) + 1);
   }
   land ||= 1;
+  const ha = HA_PER_CELL;
   const meanHeat = heatSum / land;
   const meanHabitat = habSum / land;
-  const diversity = [...natural.values()].filter((n) => n >= 10).length;
+  const diversity = [...natural.values()].filter((n) => n * ha >= MIN_HABITAT_HA).length;
 
   const metrics = {
     flooding: {
       score: clamp(100 * (1 - exposed / (land * 0.3))),
-      floodedHa: flooded, exposedHa: exposed, coastalHa, stormHa,
+      floodedHa: flooded * ha, exposedHa: exposed * ha, coastalHa: coastalCells * ha, stormHa: stormCells * ha,
     },
     biodiversity: {
       score: clamp(meanHabitat * 10 + Math.min(10, diversity * 2)),
-      meanHabitat, connectedHa: hab.connected, habitatTypes: diversity,
+      meanHabitat, connectedHa: hab.connected * ha, habitatTypes: diversity,
     },
     heat: {
       score: clamp((100 * (9 - meanHeat)) / 14),
-      meanAnomaly: meanHeat, hotHa: hot,
+      meanAnomaly: meanHeat, hotHa: hot * ha,
     },
     carbon: {
-      score: clamp((100 * (carbon / land)) / 60),
-      totalTonnes: carbon, perHa: carbon / land,
+      score: clamp((100 * (carbon / (land * ha))) / 60),
+      totalTonnes: carbon, perHa: carbon / (land * ha),
     },
   };
   const overall = (metrics.flooding.score + metrics.biodiversity.score + metrics.heat.score + metrics.carbon.score) / 4;
