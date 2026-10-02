@@ -62,13 +62,56 @@ body.panel-collapsed #toolbar { right: 50px; }
 #palette {
   position: fixed; top: 64px; left: 10px; z-index: 4;
   background: var(--surface); border-radius: 10px; box-shadow: var(--shadow);
-  padding: 10px; display: grid; grid-template-columns: repeat(4, minmax(150px, 1fr)); gap: 10px;
+  padding: 10px; display: flex; flex-direction: column; gap: 10px;
   max-width: calc(100vw - var(--panel-width) - 30px); max-height: calc(100vh - 80px); overflow: auto;
 }
+.palette-grid { display: grid; grid-template-columns: repeat(4, minmax(150px, 1fr)); gap: 10px; }
+.palette-tabs { display: flex; gap: 4px; }
+.palette-tabs button { padding: 3px 9px; font-size: 13px; }
 #palette h4 { margin: 0 0 4px; font-size: 12px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); }
 #palette .type-button { display: flex; width: 100%; border: 0; text-align: left; padding: 4px 6px; }
 #palette .type-button:hover { background: #f0f3f5; }
 #palette .type-button.active { background: #e3f1e9; color: var(--text); }
+#palette .note { margin: 0; font-size: 12px; color: var(--muted); }
+
+.values-wrap { overflow: auto; }
+table.values { border-collapse: collapse; font-size: 12px; font-variant-numeric: tabular-nums; }
+table.values th, table.values td { padding: 3px 6px; white-space: nowrap; }
+table.values thead th {
+  position: sticky; top: 0; background: var(--surface); z-index: 1;
+  text-align: right; vertical-align: bottom; font-weight: 600; border-bottom: 1px solid var(--line);
+}
+table.values thead th:first-child { text-align: left; left: 0; z-index: 2; }
+/* Keep ecosystem names in view when the table scrolls sideways. */
+table.values tbody th[scope="row"] { position: sticky; left: 0; background: var(--surface); }
+table.values tr[data-type]:hover th[scope="row"] { background: #f0f3f5; }
+table.values tr.active th[scope="row"] { background: #e3f1e9; }
+table.values tr.cat-row span { position: sticky; left: 6px; }
+.info-head { border: 0; background: none; padding: 2px; font-weight: 600; text-align: right; cursor: help; }
+.info-head:hover { color: var(--accent); }
+.info-icon {
+  display: inline-flex; align-items: center; justify-content: center; width: 13px; height: 13px; border-radius: 50%;
+  border: 1px solid currentColor; font: italic 600 9px/1 Georgia, serif; color: var(--muted); vertical-align: 1px;
+}
+#value-info {
+  position: fixed; z-index: 5; background: var(--text); color: #fff; border-radius: 8px; box-shadow: var(--shadow);
+  padding: 8px 10px; font-size: 12px; line-height: 1.45; pointer-events: none;
+}
+#value-info p { margin: 4px 0 0; }
+#value-info .info-range { color: #c9d1d8; }
+table.values th small { display: block; font-weight: 400; color: var(--muted); }
+table.values tbody th { text-align: left; font-weight: 400; }
+table.values tr.cat-row th {
+  padding-top: 8px; font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); font-weight: 600;
+}
+table.values tr[data-type] { cursor: pointer; }
+table.values tr[data-type]:hover { background: #f0f3f5; }
+table.values tr.active { background: #e3f1e9; }
+table.values td {
+  text-align: right; min-width: 52px;
+  background: linear-gradient(to right, rgba(31, 122, 77, 0.18) var(--w), transparent var(--w)) no-repeat;
+  background-size: 100% 4px; background-position: 0 100%;
+}
 
 #legend {
   position: fixed; bottom: 34px; left: 120px; z-index: 2;
@@ -170,7 +213,8 @@ details { margin-top: 10px; }
   #panel { top: auto; left: 0; right: 0; bottom: 0; width: 100%; height: 45vh; border-radius: 12px 12px 0 0; }
   body.panel-collapsed #panel { transform: translateY(calc(45vh - 36px)); }
   #panel-toggle { left: auto; right: 16px; top: 0; transform: translateY(-100%); border-radius: 6px 6px 0 0; }
-  #palette { grid-template-columns: 1fr 1fr; max-width: calc(100vw - 20px); right: 10px; }
+  #palette { max-width: calc(100vw - 20px); right: 10px; }
+  .palette-grid { grid-template-columns: 1fr 1fr; }
   #legend { left: 10px; bottom: calc(45vh + 10px); }
   .brand { width: 100%; }
 }
