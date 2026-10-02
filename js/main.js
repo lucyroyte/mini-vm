@@ -11,7 +11,7 @@ import {
   $, renderPalette, renderScore, renderInspector, renderBorough, renderLegend, renderVisionList,
 } from './ui.js';
 
-const CACHE_KEY = 'world-v1';
+const CACHE_KEY = 'world-v2';
 const CACHE_DAYS = 30;
 
 // Loading ------------------------------------------------------------------------
@@ -57,11 +57,12 @@ async function loadWorld() {
       return null;
     }
   };
-  const [parks, hydrography, shoreline, floodplain, lots, elevation] = await Promise.all([
+  const [parks, hydrography, shoreline, floodplain, wetlands, lots, elevation] = await Promise.all([
     optional('parks', LAYERS.parks.label, (p) => loadLayer('parks', p, bbox)),
     optional('hydrography', LAYERS.hydrography.label, (p) => loadLayer('hydrography', p, bbox)),
     optional('shoreline', LAYERS.shoreline.label, (p) => loadLayer('shoreline', p, bbox)),
     optional('floodplain', LAYERS.floodplain.label, (p) => loadLayer('floodplain', p, bbox)),
+    optional('wetlands', LAYERS.wetlands.label, (p) => loadLayer('wetlands', p, bbox)),
     optional('landcover', LAYERS.landcover.label, (p) => loadLots(p)),
     optional('elevation', 'Ground elevation (USGS 3DEP)', async () => ({ fn: await loadElevation(bbox), source: ELEVATION_SOURCE, name: 'AWS Terrain Tiles' })),
   ]);
@@ -75,6 +76,7 @@ async function loadWorld() {
     hydrography: hydrography?.features,
     shoreline: shoreline?.features,
     floodplain: floodplain?.features,
+    wetlands: wetlands?.features,
     lots: lots?.lots,
     elevation: elevation?.fn,
   });
@@ -90,6 +92,7 @@ async function loadWorld() {
       hydrography: hydrography?.features ?? [],
       shoreline: shoreline?.features ?? [],
       floodplain: floodplain?.features ?? [],
+      wetlands: wetlands?.features ?? [],
     },
   };
   // Only cache a complete load, so a partial one is retried next time.

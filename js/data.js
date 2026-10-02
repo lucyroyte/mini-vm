@@ -30,6 +30,7 @@ export const LAYERS = {
     search: 'Sea Level Rise Maps (2020s 100-year Floodplain)',
     fallbackSearch: 'NYC Stormwater Flood Map',
   },
+  wetlands: { label: 'Wetlands (NYC Parks)', needsGeometry: true, ids: ['p48c-iqtu'], search: 'NYC Wetlands' },
   landcover: {
     label: 'Land use and buildings (MapPLUTO)',
     ids: ['64uk-42ks'],

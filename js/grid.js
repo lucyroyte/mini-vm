@@ -21,6 +21,12 @@ const PARK_TYPES = {
 };
 const PARK_CLASSES = [...new Set(Object.values(PARK_TYPES))];
 
+// NYC Parks wetland classes → ecosystem type. Emergent wetland is tidal marsh
+// inside the floodplain and freshwater marsh outside it. Mapped open water is
+// left to the hydrography layer.
+const WETLAND_TYPES = { 'Estuarine': 'salt-marsh', 'Emergent': 'salt-marsh', 'Scrub/Shrub': 'fresh-wetland', 'Forested': 'fresh-wetland' };
+const WETLAND_CLASSES = ['salt-marsh', 'fresh-wetland'];
+
 // PLUTO land use codes → land cover group.
 const LAND_USE = {
   '01': 'res', '02': 'res', '03': 'res', '04': 'res', '05': 'com', '08': 'com',
@@ -30,7 +36,7 @@ const GROUPS = ['res', 'com', 'ind', 'trans', 'open', 'parking', 'vacant'];
 
 export const sizeForFloors = (f) => (f >= 13 ? 'high' : f >= 5 ? 'mid' : 'low');
 
-export function buildGrid({ boundary, parks = [], hydrography = [], shoreline = [], floodplain = [], lots = [], elevation = null }) {
+export function buildGrid({ boundary, parks = [], hydrography = [], shoreline = [], floodplain = [], wetlands = [], lots = [], elevation = null }) {
   const [w, s, e, n] = bboxOf(boundary);
   const proj = makeProjection((w + e) / 2, (s + n) / 2);
   const [bx0, by0] = proj.toXY(w, s);
@@ -56,10 +62,20 @@ export function buildGrid({ boundary, parks = [], hydrography = [], shoreline = 
     park[i] = PARK_CLASSES.indexOf(type) + 1;
   });
 
+  // Wetlands, rasterized after the floodplain so emergent marsh can be split by it.
+  const wet = new Uint8Array(samples);
+  rasterizePolygons(wetlands, lattice, proj, (i, f) => {
+    let type = WETLAND_TYPES[f.properties?.classname];
+    if (!type) return;
+    if (f.properties.classname === 'Emergent' && !flood[i]) type = 'fresh-wetland';
+    wet[i] = WETLAND_CLASSES.indexOf(type) + 1;
+  });
+
   // Aggregate samples to cells.
   const all = cols * rows;
   const landFrac = new Float32Array(all), hydroFrac = new Float32Array(all), floodFrac = new Float32Array(all);
   const parkCounts = new Uint8Array(all * PARK_CLASSES.length);
+  const wetCounts = new Uint8Array(all * WETLAND_CLASSES.length);
   const share = 1 / (SUB * SUB);
   for (let r = 0; r < lattice.rows; r++) {
     for (let c = 0; c < lattice.cols; c++) {
@@ -69,6 +85,7 @@ export function buildGrid({ boundary, parks = [], hydrography = [], shoreline = 
       if (hydro[i]) hydroFrac[k] += share;
       if (flood[i]) floodFrac[k] += share;
       if (park[i] && land[i]) parkCounts[k * PARK_CLASSES.length + park[i] - 1]++;
+      if (wet[i] && land[i]) wetCounts[k * WETLAND_CLASSES.length + wet[i] - 1]++;
     }
   }
 
@@ -163,6 +180,10 @@ export function buildGrid({ boundary, parks = [], hydrography = [], shoreline = 
 
   function classify(k, i) {
     if (!isLand(k)) return WATER;
+    // Mapped wetlands win over park and lot categories: Marine Park is a
+    // "Community Park" but mostly salt marsh, and federal parkland is "open space" in PLUTO.
+    const [salt, fresh] = wetCounts.subarray(k * WETLAND_CLASSES.length, (k + 1) * WETLAND_CLASSES.length);
+    if ((salt + fresh) / (SUB * SUB) >= 0.5 * landFrac[k]) return TYPE_INDEX[salt >= fresh ? 'salt-marsh' : 'fresh-wetland'];
     // Parks
     const pc = parkCounts.subarray(k * PARK_CLASSES.length, (k + 1) * PARK_CLASSES.length);
     let parkTotal = 0, best = 0;
