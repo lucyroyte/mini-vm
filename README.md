@@ -51,6 +51,10 @@ Keyboard shortcuts: I, B, R, F and E pick the tools; Esc closes the palette.
 | Building footprints | NYC Open Data, *Building Footprints* | Drawn on the map at zoom 15+, for the current view only |
 | 3D buildings | NYC Planning, *NYC 3D Model by Community District* (Rhino files, 2014 aerial survey) | The **3D** view; Community District 2 only so far |
 | Elevation | [AWS Terrain Tiles](https://registry.opendata.aws/terrain-tiles/) (USGS 3DEP lidar) | Average cell elevation in feet |
+| Residents | US Census Bureau, *2020 Census Redistricting Data (PL 94-171)*, block population, in `data/census/` | Residents per cell, placed on homes using PLUTO's residential units |
+| Summer surface temperature | USGS *Landsat 8/9 Collection 2 surface temperature*, four clear summer days 2023–2025, in `data/heat/` | Today's heat map; the heat model adds a vision's changes to it |
+| Street trees | NYC Open Data, *2015 Street Tree Census* | Tree shade per cell, for the heat model |
+| Heat vulnerability | NYC Open Data, *Heat Vulnerability Index Rankings* (DOHMH, by ZIP code) | Counting heat-vulnerable residents |
 
 NYC Open Data sometimes republishes a dataset under a new ID. `js/data.js` lists the known IDs for each layer, and falls back to a catalog search by name when none of them works. Each layer except the boundary is optional. If one fails to load, the grid is built from the rest, and the failure appears under *Data sources*.
 
@@ -70,7 +74,7 @@ The entities from the semantic model live in these files:
 | Entity | Where |
 | --- | --- |
 | Borough | `world.borough` in `js/grid.js` (name, boundary, total area) |
-| Cell | `world.cells` in `js/grid.js`, stored as typed arrays: boundary from `cellBoundary()`, 2,500 m² area, elevation, in floodplain, on shoreline, existing type. The current type is in the vision. |
+| Cell | `world.cells` in `js/grid.js`, stored as typed arrays: boundary from `cellBoundary()`, 2,500 m² area, elevation, in floodplain, on shoreline, existing type, residents, heat vulnerability, street tree shade, measured summer surface temperature. The current type is in the vision. |
 | Ecosystem type | `js/ecosystems.js`: category, name, imperviousness, vegetation cover, habitat value, carbon, color, plus building size and use for built types |
 | Vision | `js/vision.js`: name, list of changed cells, date created |
 | Climate scenario | `state.scenario` in `js/main.js`: rainfall intensity (in/hr) and sea level rise (ft) |
@@ -87,14 +91,24 @@ The entities from the semantic model live in these files:
 
 ### Climate models
 
-All four models are deliberately simple and run in milliseconds, so the score updates while you paint. They are for comparing visions, not for predicting real outcomes.
+All four models are deliberately simple and run in tens of milliseconds, so the score updates while you paint. They are for comparing visions, not for predicting real outcomes.
+
+How the flood and heat models compare with open measurements of Brooklyn (cells with their centers inside each map):
+
+| Model | Compared with | Agreement |
+| --- | --- | --- |
+| Coastal flooding, 10 ft storm tide | FEMA/NPCC 100-year floodplain (2020s) | 76% of the floodplain flooded; 25% of modeled flooding outside it |
+| Coastal flooding, 11.3 ft (Sandy's peak at the Battery) | *Sandy Inundation Zone* | 84% of the zone flooded; 30% outside it |
+| Stormwater, 2.13 in/hr | DEP *NYC Stormwater Flood Map*, moderate flood, current sea levels | 19% of DEP's flooded area; 91% outside it, so stormwater results show where water collects on the terrain, not where the sewers back up |
+| Heat | Landsat summer surface temperature | r = 0.57 |
 
 - **Flooding** has two parts.
   - *Coastal*: a 100-year storm tide (10 ft NAVD88, plus sea level rise) spreads inland from open water across every cell lower than the water. A bulkhead, riprap, port edge or dune stops the water until it is overtopped. Wetlands and living shorelines absorb part of the surge as it crosses them.
   - *Stormwater*: a one-hour storm at the chosen intensity. Each cell absorbs rain through its own storage, its pervious soil, and its storm sewers (1.75 in/hr on impervious surfaces). The excess runs downhill and ponds in low spots, and 4 inches or more of ponding counts as flooded.
-  - Flooded homes, businesses and streets lower the score. Flooded wetlands and parks lower it only a little.
+  - The score is half property (flooded homes, businesses and streets; flooded wetlands and parks count only a little) and half residents flooded.
+- **Residents**: each 2020 Census block's population is split among its tax lots by residential units (blocks with no units, such as dorms and nursing homes, by floor area), then spread over the lots' cells. Where a vision changes a cell's type, the cell gets today's average residents for that type, so new housing adds people and replacing homes moves people out.
 - **Biodiversity**: each cell's habitat value is weighted by how many of its neighbors are good habitat, which rewards connected habitat. A bonus is added for the number of different habitat types.
-- **Heat**: each cell's surface heat is set by its imperviousness, offset by its vegetation and by water, then averaged with its neighbors so that parks cool the blocks around them.
+- **Heat**: the [InVEST Urban Cooling model](https://storage.googleapis.com/releases.naturalcapitalproject.org/invest-userguide/latest/en/urban_cooling_model.html) from the Natural Capital Project. Each cell's cooling capacity is 0.6 × shade + 0.2 × albedo + 0.2 × evapotranspiration, with shade from its type plus its street trees. Parks of 2 ha or more cool cells within 450 m, and air mixes over about 500 m. Today's map is Landsat's measured summer surface temperature, and a vision adds the model's change from today. The model is scaled to Landsat: measured ≈ 81 °F + 25.5 °F × (1 − heat mitigation), which explains a third of the variation between cells (r = 0.57; the previous model reached r = 0.53). The score is half the land's average temperature and half the average where people live; heat islands are cells at 105 °F or more.
 - **Carbon**: total carbon stored in soil and plants, in tonnes per 1-ha cell.
 
 Each metric is scored from 0 to 100, and the climate score is their average.
@@ -107,6 +121,7 @@ css/style.css        styles
 js/main.js           loading, tools, and app wiring
 js/data.js           NYC Open Data (Socrata) loading
 js/elevation.js      terrain tiles → elevation
+js/landsat.js        summer surface temperature map
 js/geo.js            projection and polygon rasterization
 js/grid.js           Borough and Cell grid, land cover classification
 js/ecosystems.js     ecosystem types
@@ -117,6 +132,8 @@ js/ui.js             side panel, palette, legend
 js/store.js          IndexedDB cache
 js/model3d.js        3D buildings: three.js layer on the map
 data/3d/             3D buildings per community district (glTF) and models.json listing them
-tools/               converter from the NYC 3D Model (.3dm) to glTF
+data/census/         2020 Census population and housing units per Brooklyn block
+data/heat/           Landsat summer surface temperature (PNG) and its bounds
+tools/               converter from the NYC 3D Model (.3dm) to glTF, and the census and Landsat extractors
 docs/semantic-model.md
 ```

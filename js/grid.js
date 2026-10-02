@@ -37,7 +37,11 @@ const GROUPS = ['res', 'com', 'ind', 'trans', 'open', 'parking', 'vacant'];
 
 export const sizeForFloors = (f) => (f >= 13 ? 'high' : f >= 5 ? 'mid' : 'low');
 
-export function buildGrid({ boundary, parks = [], hydrography = [], shoreline = [], floodplain = [], wetlands = [], lots = [], elevation = null }) {
+// Crown diameter in feet from trunk diameter in inches, a rough fit for NYC's
+// common street trees (a 12 in London plane spreads about 25 ft).
+const crownFeet = (dbh) => Math.min(60, 5 + 1.6 * dbh);
+
+export function buildGrid({ boundary, parks = [], hydrography = [], shoreline = [], floodplain = [], wetlands = [], lots = [], elevation = null, surfaceTemp = null, trees = [], census = null, hvi = null }) {
   const [w, s, e, n] = bboxOf(boundary);
   const proj = makeProjection((w + e) / 2, (s + n) / 2);
   const [bx0, by0] = proj.toXY(w, s);
@@ -95,23 +99,40 @@ export function buildGrid({ boundary, parks = [], hydrography = [], shoreline = 
   const lotArea = new Float32Array(all * GROUPS.length);
   const floorArea = new Float32Array(all * GROUPS.length);
   const floorWeighted = new Float32Array(all * GROUPS.length);
-  for (const lot of lots) {
+  const residents = new Float32Array(all);
+  const hviSum = new Float32Array(all), hviArea = new Float32Array(all);
+  const lotResidents = census ? censusToLots(lots, census) : null;
+  lots.forEach((lot, n) => {
     const group = LAND_USE[lot.landuse];
-    if (!group) continue;
-    const g = GROUPS.indexOf(group);
+    const g = group ? GROUPS.indexOf(group) : -1;
     const [x, y] = proj.toXY(lot.lon, lot.lat);
     const c = Math.floor((x - x0) / CELL), r = Math.floor((y - y0) / CELL);
     const area = lot.lotarea * SQFT;
     const rad = Math.floor(Math.sqrt(area) / CELL / 2);
     const spread = (2 * rad + 1) ** 2;
+    const people = lotResidents ? lotResidents[n] : 0;
+    const v = hvi?.[lot.zip];
     for (let dr = -rad; dr <= rad; dr++) for (let dc = -rad; dc <= rad; dc++) {
       const cc = c + dc, rr = r + dr;
       if (cc < 0 || rr < 0 || cc >= cols || rr >= rows) continue;
-      const k = (rr * cols + cc) * GROUPS.length + g;
+      const cell = rr * cols + cc;
+      residents[cell] += people / spread;
+      if (v) { hviSum[cell] += (v * area) / spread; hviArea[cell] += area / spread; }
+      if (g < 0) continue;
+      const k = cell * GROUPS.length + g;
       lotArea[k] += area / spread;
       floorArea[k] += lot.bldgarea / spread;
       floorWeighted[k] += (lot.bldgarea * lot.floors) / spread;
     }
+  });
+
+  // Street tree canopy: each tree's crown area, added to the cell it stands in.
+  const crown = new Float32Array(all);
+  for (const t of trees) {
+    const [x, y] = proj.toXY(t.lon, t.lat);
+    const c = Math.floor((x - x0) / CELL), r = Math.floor((y - y0) / CELL);
+    if (c < 0 || r < 0 || c >= cols || r >= rows) continue;
+    crown[r * cols + c] += Math.PI * (crownFeet(t.dbh) / 2) ** 2 * SQFT;
   }
 
   // Keep land cells plus a margin of water around the shore.
@@ -148,6 +169,10 @@ export function buildGrid({ boundary, parks = [], hydrography = [], shoreline = 
     inFloodplain: new Uint8Array(N), onShoreline: new Uint8Array(N),
     land: new Float32Array(N),
     existing: new Uint8Array(N),
+    residents: new Float32Array(N), // 2020 Census population, placed on homes
+    hvi: new Float32Array(N), // Heat Vulnerability Index of the ZIP code, 1–5 (0 = unknown)
+    canopy: new Float32Array(N), // share of the cell shaded by street trees
+    surfaceTemp: new Float32Array(N).fill(NaN), // °F, summer surface temperature measured by Landsat
   };
   const index = new Int32Array(all).fill(-1);
   let missingElevation = 0;
@@ -159,6 +184,9 @@ export function buildGrid({ boundary, parks = [], hydrography = [], shoreline = 
     cells.land[i] = landFrac[k];
     cells.inFloodplain[i] = floodFrac[k] >= 0.25 ? 1 : 0;
     cells.onShoreline[i] = isLand(k) && shore[k] ? 1 : 0;
+    cells.residents[i] = residents[k];
+    cells.hvi[i] = hviArea[k] ? hviSum[k] / hviArea[k] : 0;
+    cells.canopy[i] = Math.min(1, crown[k] / CELL_AREA);
 
     let elev = NaN;
     if (elevation) {
@@ -175,6 +203,15 @@ export function buildGrid({ boundary, parks = [], hydrography = [], shoreline = 
       elev = !isLand(k) ? -10 : cells.inFloodplain[i] ? 6 : 30;
     }
     cells.elevation[i] = elev;
+
+    if (surfaceTemp && isLand(k)) {
+      let sum = 0, m = 0;
+      for (const fy of [0.25, 0.75]) for (const fx of [0.25, 0.75]) {
+        const v = surfaceTemp(...proj.toLonLat(x0 + (c + fx) * CELL, y0 + (r + fy) * CELL));
+        if (Number.isFinite(v)) { sum += v; m++; }
+      }
+      if (m) cells.surfaceTemp[i] = sum / m;
+    }
 
     cells.existing[i] = classify(k, i);
   });
@@ -231,6 +268,23 @@ export function buildGrid({ boundary, parks = [], hydrography = [], shoreline = 
     index,
     missingElevation,
   };
+}
+
+// Splits each census block's population among its tax lots in proportion to
+// their housing units (dasymetric mapping). Blocks whose lots list no units
+// (dorms, nursing homes, shelters) are split by building floor area.
+function censusToLots(lots, blocks) {
+  const units = new Map(), floor = new Map();
+  for (const lot of lots) {
+    units.set(lot.block, (units.get(lot.block) ?? 0) + lot.units);
+    floor.set(lot.block, (floor.get(lot.block) ?? 0) + lot.bldgarea);
+  }
+  return Float32Array.from(lots, (lot) => {
+    const pop = blocks[lot.block]?.[0];
+    if (!pop) return 0;
+    const u = units.get(lot.block), f = floor.get(lot.block);
+    return u ? (pop * lot.units) / u : f ? (pop * lot.bldgarea) / f : 0;
+  });
 }
 
 function isArea(f) {

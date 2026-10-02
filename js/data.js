@@ -41,7 +41,15 @@ export const LAYERS = {
   },
   lotShapes: { label: 'Tax lot polygons', needsGeometry: true, ids: ['i38t-6if2'], search: 'TAX_LOT_POLYGON' },
   buildings: { label: 'Building footprints', needsGeometry: true, ids: ['5zhs-2jue', 'nqwf-w8eh'], search: 'Building Footprints' },
+  streetTrees: { label: 'Street trees (2015 census)', ids: ['uvpi-gqnh'], search: '2015 Street Tree Census - Tree Data' },
+  heatVulnerability: { label: 'Heat Vulnerability Index (DOHMH)', ids: ['4mhf-duep'], search: 'Heat Vulnerability Index Rankings' },
 };
+
+// 2020 Census population and housing units for each Brooklyn census block,
+// extracted from the Census Bureau's PL 94-171 redistricting file by
+// tools/census_blocks.py. Keyed like PLUTO's bctcb2020 (borough, tract, block).
+export const CENSUS_BLOCKS_URL = 'data/census/brooklyn-blocks-2020.json';
+export const CENSUS_SOURCE = 'https://www.census.gov/programs-surveys/decennial-census/about/rdo/summary-files.html';
 
 async function getJSON(url, signal = AbortSignal.timeout(120000)) {
   const res = await fetch(url, { signal });
@@ -155,29 +163,59 @@ export async function loadLayer(key, onProgress, bbox = BROOKLYN_BBOX) {
   return { features, source: `${DOMAIN}/d/${dataset.id}`, name: dataset.meta.name };
 }
 
-// Tax lots from PLUTO: location, land use, floors, lot and building area.
-// Fetched as CSV with only the columns we need (about 280k rows for Brooklyn).
-export async function loadLots(onProgress) {
-  const dataset = await resolve(LAYERS.landcover);
-  const lots = [];
+async function fetchCSV(dataset, params, label, onProgress, parse) {
+  const out = [];
   for (let offset = 0; ; offset += PAGE) {
-    const params = new URLSearchParams({
-      $select: 'latitude,longitude,landuse,numfloors,lotarea,bldgarea',
-      $where: "borough='BK' AND latitude IS NOT NULL",
-      $limit: PAGE, $offset: offset, $order: ':id',
-    });
-    const res = await fetch(`${DOMAIN}/resource/${dataset.id}.csv?${params}`, { signal: AbortSignal.timeout(180000) });
-    if (!res.ok) throw new Error(`${res.status} loading PLUTO`);
+    const q = new URLSearchParams({ ...params, $limit: PAGE, $offset: offset, $order: ':id' });
+    const res = await fetch(`${DOMAIN}/resource/${dataset.id}.csv?${q}`, { signal: AbortSignal.timeout(180000) });
+    if (!res.ok) throw new Error(`${res.status} loading ${label}`);
     const rows = (await res.text()).trim().split('\n').slice(1);
     for (const line of rows) {
-      const [lat, lon, landuse, floors, lotarea, bldgarea] = line.split(',').map((s) => s.replace(/"/g, ''));
-      if (!lat) continue;
-      lots.push({ lat: +lat, lon: +lon, landuse: landuse.padStart(2, '0'), floors: +floors || 0, lotarea: +lotarea || 0, bldgarea: +bldgarea || 0 });
+      const row = parse(line.split(',').map((s) => s.replace(/"/g, '')));
+      if (row) out.push(row);
     }
-    onProgress?.(lots.length);
-    if (rows.length < PAGE) break;
+    onProgress?.(out.length);
+    if (rows.length < PAGE) return out;
   }
+}
+
+// Tax lots from PLUTO: location, land use, floors, lot and building area,
+// residential units and the 2020 census block. Fetched as CSV with only the
+// columns we need (about 280k rows for Brooklyn).
+export async function loadLots(onProgress) {
+  const dataset = await resolve(LAYERS.landcover);
+  const lots = await fetchCSV(dataset, {
+    $select: 'latitude,longitude,landuse,numfloors,lotarea,bldgarea,unitsres,bctcb2020,zipcode',
+    $where: "borough='BK' AND latitude IS NOT NULL",
+  }, 'PLUTO', onProgress, ([lat, lon, landuse, floors, lotarea, bldgarea, units, block, zip]) => (lat ? {
+    lat: +lat, lon: +lon, landuse: landuse.padStart(2, '0'), floors: +floors || 0, lotarea: +lotarea || 0, bldgarea: +bldgarea || 0,
+    units: +units || 0, block, zip,
+  } : null));
   return { lots, source: `${DOMAIN}/d/${dataset.id}`, name: dataset.meta.name };
+}
+
+// Living street trees: location and trunk diameter, for tree canopy shade.
+export async function loadStreetTrees(onProgress) {
+  const dataset = await resolve(LAYERS.streetTrees);
+  const trees = await fetchCSV(dataset, {
+    $select: 'latitude,longitude,tree_dbh',
+    $where: "boroname='Brooklyn' AND status='Alive'",
+  }, 'street trees', onProgress, ([lat, lon, dbh]) => (lat ? { lat: +lat, lon: +lon, dbh: +dbh || 0 } : null));
+  return { trees, source: `${DOMAIN}/d/${dataset.id}`, name: dataset.meta.name };
+}
+
+// Heat Vulnerability Index (1 = least, 5 = most vulnerable) by ZIP code area.
+export async function loadHeatVulnerability() {
+  const dataset = await resolve(LAYERS.heatVulnerability);
+  const rows = await getJSON(`${DOMAIN}/resource/${dataset.id}.json?$limit=1000`);
+  const byZip = Object.fromEntries(rows.map((r) => [r.zcta20 ?? r.zipcode ?? r.zcta, +r.hvi]).filter(([z, v]) => z && v));
+  return { byZip, source: `${DOMAIN}/d/${dataset.id}`, name: dataset.meta.name };
+}
+
+export async function loadCensusBlocks(url = CENSUS_BLOCKS_URL) {
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(`${res.status} loading census blocks`);
+  return { blocks: await res.json(), source: CENSUS_SOURCE, name: '2020 Census Redistricting Data (PL 94-171), Kings County blocks' };
 }
 
 // Building footprints within a map view, for display at street-level zooms.

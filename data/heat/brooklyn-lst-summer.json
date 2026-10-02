@@ -1,0 +1,18 @@
+{
+ "bbox": [
+  -74.06,
+  40.565,
+  -73.83,
+  40.745
+ ],
+ "width": 575,
+ "height": 600,
+ "encoding": "value = (degF - 60) * 4; 0 = no data",
+ "source": "Landsat 8/9 Collection 2 Level-2 surface temperature (ST_B10), USGS, via Microsoft Planetary Computer",
+ "scenes": [
+  "LC08_L2SP_013032_20230809_20230812_02_T1",
+  "LC09_L2SP_013032_20240702_20240703_02_T1",
+  "LC08_L2SP_013032_20240827_20240831_02_T1",
+  "LC09_L2SP_013032_20250822_20250823_02_T1"
+ ]
+}

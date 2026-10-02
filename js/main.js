@@ -1,6 +1,7 @@
 import { ECOSYSTEMS, TYPE_INDEX } from './ecosystems.js';
-import { LAYERS, loadLayer, loadLots, loadLotAt } from './data.js';
+import { LAYERS, loadLayer, loadLots, loadLotAt, loadStreetTrees, loadHeatVulnerability, loadCensusBlocks } from './data.js';
 import { loadElevation, ELEVATION_SOURCE } from './elevation.js';
+import { loadSurfaceTemperature, SURFACE_TEMP_SOURCE } from './landsat.js';
 import { buildGrid, cellAt, cellBoundary, cellsInPolygon, CELL, HA_PER_CELL } from './grid.js';
 import { bboxOf, containsPoint, polygonsOf } from './geo.js';
 import { prepare, runModels, SCENARIO_PRESETS } from './models.js';
@@ -12,7 +13,7 @@ import {
   $, renderPalette, renderScore, renderInspector, renderBorough, renderLegend, renderVisionList,
 } from './ui.js';
 
-const CACHE_KEY = 'world-v3';
+const CACHE_KEY = 'world-v4';
 const CACHE_DAYS = 30;
 
 // Loading ------------------------------------------------------------------------
@@ -58,7 +59,7 @@ async function loadWorld() {
       return null;
     }
   };
-  const [parks, hydrography, shoreline, floodplain, wetlands, lots, elevation] = await Promise.all([
+  const [parks, hydrography, shoreline, floodplain, wetlands, lots, elevation, trees, hvi, census, surfaceTemp] = await Promise.all([
     optional('parks', LAYERS.parks.label, (p) => loadLayer('parks', p, bbox)),
     optional('hydrography', LAYERS.hydrography.label, (p) => loadLayer('hydrography', p, bbox)),
     optional('shoreline', LAYERS.shoreline.label, (p) => loadLayer('shoreline', p, bbox)),
@@ -66,6 +67,10 @@ async function loadWorld() {
     optional('wetlands', LAYERS.wetlands.label, (p) => loadLayer('wetlands', p, bbox)),
     optional('landcover', LAYERS.landcover.label, (p) => loadLots(p)),
     optional('elevation', 'Ground elevation (USGS 3DEP)', async () => ({ fn: await loadElevation(bbox), source: ELEVATION_SOURCE, name: 'AWS Terrain Tiles' })),
+    optional('streetTrees', LAYERS.streetTrees.label, (p) => loadStreetTrees(p)),
+    optional('heatVulnerability', LAYERS.heatVulnerability.label, () => loadHeatVulnerability()),
+    optional('census', 'Residents (2020 Census blocks)', () => loadCensusBlocks()),
+    optional('surfaceTemp', 'Summer surface temperature (Landsat)', async () => ({ fn: await loadSurfaceTemperature(), source: SURFACE_TEMP_SOURCE, name: 'Landsat 8/9 surface temperature, summers 2023–2025' })),
   ]);
   sources.push({ label: LAYERS.buildings.label, url: 'https://data.cityofnewyork.us/d/5zhs-2jue', name: 'Loaded for the map view when zoomed in', ok: true });
 
@@ -80,6 +85,10 @@ async function loadWorld() {
     wetlands: wetlands?.features,
     lots: lots?.lots,
     elevation: elevation?.fn,
+    surfaceTemp: surfaceTemp?.fn,
+    trees: trees?.trees,
+    census: census?.blocks,
+    hvi: hvi?.byZip,
   });
   b.done(`${built.cells.count.toLocaleString()} cells`);
 

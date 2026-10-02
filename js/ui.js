@@ -6,7 +6,8 @@ import { CELL, CELL_AREA, HA_PER_CELL } from './grid.js';
 
 export const $ = (sel) => document.querySelector(sel);
 
-const fmt = (v, d = 0) => v.toLocaleString('en-US', { maximumFractionDigits: d, minimumFractionDigits: d });
+// Negative digits round to tens, hundreds, thousands.
+const fmt = (v, d = 0) => (d < 0 ? Math.round(v / 10 ** -d) * 10 ** -d : v).toLocaleString('en-US', { maximumFractionDigits: Math.max(0, d), minimumFractionDigits: Math.max(0, d) });
 const signed = (v, d = 0) => (v > 0 ? '+' : v < 0 ? '−' : '±') + fmt(Math.abs(v), d);
 const esc = (s) => String(s).replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
 
@@ -39,8 +40,8 @@ export function describeType(t) {
 const METRICS = [
   {
     key: 'flooding', name: 'Flooding',
-    detail: (m) => `${fmt(m.floodedHa)} ha flooded (${fmt(m.coastalHa)} coastal, ${fmt(m.stormHa)} stormwater); ${fmt(m.exposedHa)} ha of homes, businesses and streets at risk`,
-    value: (m) => m.exposedHa, unit: 'ha at risk', lowerIsBetter: true,
+    detail: (m) => `${fmt(m.floodedHa)} ha flooded (${fmt(m.coastalHa)} coastal, ${fmt(m.stormHa)} stormwater); ${fmt(m.floodedPeople, -3)} residents and ${fmt(m.exposedHa)} ha of homes, businesses and streets at risk`,
+    value: (m) => m.floodedPeople, unit: 'residents flooded', digits: -2, lowerIsBetter: true,
   },
   {
     key: 'biodiversity', name: 'Biodiversity',
@@ -49,8 +50,8 @@ const METRICS = [
   },
   {
     key: 'heat', name: 'Heat',
-    detail: (m) => `Surfaces average ${fmt(m.meanAnomaly, 1)} °F hotter than a fully green landscape; ${fmt(m.hotHa)} ha of heat islands`,
-    value: (m) => m.meanAnomaly, unit: '°F', digits: 1, lowerIsBetter: true,
+    detail: (m) => `Summer surfaces average ${fmt(m.meanTemp, 1)} °F (${fmt(m.peopleTemp, 1)} °F where people live); ${fmt(m.hotPeople, -3)} residents, ${fmt(m.hotVulnerable, -3)} of them in heat-vulnerable ZIP codes, live in ${fmt(m.hotHa)} ha of heat islands`,
+    value: (m) => m.meanTemp, unit: '°F', digits: 1, lowerIsBetter: true,
   },
   {
     key: 'carbon', name: 'Carbon',
@@ -101,7 +102,10 @@ export function renderInspector(world, vision, results, i) {
     ['Current type', swatch(cur) + (ex === cur ? '' : ' <em>(changed)</em>')],
     ['Coastal flood', p.coastalDepth[i] > 0 ? `${fmt(p.coastalDepth[i], 1)} ft deep` : 'Dry'],
     ['Stormwater', p.stormDepth[i] >= 0.5 ? `${fmt(p.stormDepth[i], 1)} in ponding` : 'Drains'],
-    ['Heat', `${signed(p.heat[i], 1)} °F`],
+    ['Summer surface', `${fmt(p.heat[i], 1)} °F` + (Number.isFinite(c.surfaceTemp[i]) ? ` (measured ${fmt(c.surfaceTemp[i], 1)} °F)` : ' (modeled)')],
+    ['Street trees', `${fmt(100 * c.canopy[i])}% shade`],
+    ['Residents', `${fmt(p.residents[i])}` + (Math.round(p.residents[i]) !== Math.round(c.residents[i]) ? ` <em>(${fmt(c.residents[i])} today)</em>` : '')],
+    ['Heat vulnerability', c.hvi[i] ? `${fmt(c.hvi[i], 1)} / 5 (ZIP code)` : 'Unknown'],
     ['Habitat', `${fmt(p.habitat[i], 1)} / 10`],
   ];
   $('#cell-info').innerHTML = rows.map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`).join('');
