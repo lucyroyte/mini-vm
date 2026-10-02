@@ -31,6 +31,20 @@ export function linesOf(geom) {
   return [];
 }
 
+// Even-odd point-in-polygon test against every ring of a feature, in [lon, lat].
+export function containsPoint(feature, lon, lat) {
+  let inside = false;
+  for (const rings of polygonsOf(feature.geometry)) {
+    for (const ring of rings) {
+      for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+        const [xi, yi] = ring[i], [xj, yj] = ring[j];
+        if ((yi > lat) !== (yj > lat) && lon < ((xj - xi) * (lat - yi)) / (yj - yi) + xi) inside = !inside;
+      }
+    }
+  }
+  return inside;
+}
+
 export function bboxOf(features) {
   let b = [Infinity, Infinity, -Infinity, -Infinity];
   const visit = (c) => {

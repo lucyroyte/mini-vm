@@ -1,8 +1,8 @@
 import { ECOSYSTEMS, TYPE_INDEX } from './ecosystems.js';
-import { LAYERS, loadLayer, loadLots } from './data.js';
+import { LAYERS, loadLayer, loadLots, loadLotAt } from './data.js';
 import { loadElevation, ELEVATION_SOURCE } from './elevation.js';
-import { buildGrid, cellAt, cellBoundary, CELL, HA_PER_CELL } from './grid.js';
-import { bboxOf } from './geo.js';
+import { buildGrid, cellAt, cellBoundary, cellsInPolygon, CELL, HA_PER_CELL } from './grid.js';
+import { bboxOf, containsPoint, polygonsOf } from './geo.js';
 import { prepare, runModels, SCENARIO_PRESETS } from './models.js';
 import { Vision, savedVisions, saveVision, deleteVision } from './vision.js';
 import { createMap, paintCells, paintSome, setCursor } from './map.js';
@@ -132,7 +132,7 @@ async function start() {
 
 function app(world, map) {
   let vision = new Vision(world);
-  let today, results;
+  let today, todayKey, results;
   window.brooklynVision = { world, map, state, get vision() { return vision; } };
 
   // Models --------------------------------------------------------------------
@@ -140,7 +140,9 @@ function app(world, map) {
   const recompute = (immediate) => {
     clearTimeout(modelTimer);
     const run = () => {
-      today = runModels(world, world.cells.existing, state.scenario);
+      // Today only changes with the scenario, so it isn't rerun on every edit.
+      const key = `${state.scenario.rainfall}/${state.scenario.seaLevelRise}`;
+      if (key !== todayKey) { today = runModels(world, world.cells.existing, state.scenario); todayKey = key; }
       results = runModels(world, vision.current, state.scenario);
       renderScore(today, results);
       renderInspector(world, vision, results, state.selected);
@@ -241,7 +243,7 @@ function app(world, map) {
     if (mod && e.key.toLowerCase() === 'z') { e.preventDefault(); e.shiftKey ? vision.redo() : vision.undo(); return; }
     if (mod && e.key.toLowerCase() === 'y') { e.preventDefault(); vision.redo(); return; }
     if (mod) return;
-    const keys = { i: 'inspect', b: 'brush', r: 'rect', f: 'fill', e: 'restore' };
+    const keys = { i: 'inspect', b: 'brush', r: 'rect', l: 'lot', f: 'fill', e: 'restore' };
     if (keys[e.key]) setTool(keys[e.key]);
     if (e.key === 'Escape') { togglePalette(false); setCursor(map, []); drag = null; }
   });
@@ -287,6 +289,39 @@ function app(world, map) {
     }
     return out;
   };
+  // Lot tool: the tax lot under the pointer, fetched on demand and kept for reuse.
+  const lots = [];
+  let lotRequest, lotTimer;
+  const lotAt = async (lon, lat) => {
+    const hit = lots.find((l) => containsPoint(l.feature, lon, lat));
+    if (hit) return hit;
+    lotRequest?.abort();
+    lotRequest = new AbortController();
+    const feature = await loadLotAt(lon, lat, lotRequest.signal);
+    if (!feature) return null;
+    const lot = { feature, cells: cellsInPolygon(world, feature) };
+    // A lot smaller than a cell still paints the cell it sits in.
+    if (!lot.cells.length) { const i = cellAt(world, lon, lat); if (i >= 0) lot.cells.push(i); }
+    lots.push(lot);
+    if (lots.length > 500) lots.shift();
+    return lot;
+  };
+  const lotOutline = (lot) => [...outline(lot.cells), ...polygonsOf(lot.feature.geometry).map((rings) => rings[0])];
+  const showLot = (e) => {
+    clearTimeout(lotTimer);
+    const { lng, lat } = e.lngLat;
+    const cached = lots.find((l) => containsPoint(l.feature, lng, lat));
+    if (cached) { setCursor(map, lotOutline(cached), toolColor()); return; }
+    lotTimer = setTimeout(async () => {
+      try {
+        const lot = await lotAt(lng, lat);
+        if (state.tool === 'lot') setCursor(map, lot ? lotOutline(lot) : [], toolColor());
+      } catch (err) {
+        if (err.name !== 'AbortError') console.warn('Tax lot unavailable:', err.message);
+      }
+    }, 120);
+  };
+
   const paint = (ids) => {
     const changed = [];
     for (const i of ids) {
@@ -305,6 +340,18 @@ function app(world, map) {
     if (state.tool === 'inspect' || e.originalEvent.button !== 0) return;
     const i = cellOf(e);
     if (i < 0) return;
+    if (state.tool === 'lot') {
+      const { lng, lat } = e.lngLat;
+      lotAt(lng, lat).then((lot) => {
+        if (!lot) return;
+        vision.beginStroke();
+        const changed = paint(lot.cells);
+        vision.endStroke();
+        if (changed.length) vision.emit(changed);
+        updateVisionStats();
+      }).catch((err) => { if (err.name !== 'AbortError') alert(`The tax lot couldn't be loaded: ${err.message}`); });
+      return;
+    }
     if (state.tool === 'fill') {
       const ids = fillCells(i);
       vision.beginStroke();
@@ -324,6 +371,7 @@ function app(world, map) {
     const i = cellOf(e);
     showTooltip(e, i);
     if (state.tool === 'inspect') { setCursor(map, i >= 0 ? outline([i]) : []); return; }
+    if (state.tool === 'lot') { showLot(e); return; }
     if (state.tool === 'rect' && drag) { setCursor(map, i >= 0 ? [rectOutline(drag.start, i)] : [], toolColor()); return; }
     const ids = state.tool === 'fill' ? [i].filter((x) => x >= 0) : brushCells(i);
     setCursor(map, outline(ids), toolColor());

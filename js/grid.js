@@ -276,6 +276,16 @@ export function cellsInSquare(world, lon, lat, side) {
   return out;
 }
 
+// Cells whose centers fall inside a polygon feature.
+export function cellsInPolygon(world, feature) {
+  const { x0, y0, cols, rows, lon0, lat0 } = world.grid;
+  const out = new Set();
+  rasterizePolygons([feature], { x0, y0, step: CELL, cols, rows }, makeProjection(lon0, lat0), (k) => {
+    if (world.index[k] >= 0) out.add(world.index[k]);
+  });
+  return [...out];
+}
+
 // 8-connected neighbor cell ids.
 export function neighbors(world, i, out = []) {
   out.length = 0;

@@ -22,6 +22,7 @@ The first load downloads Brooklyn's data from NYC Open Data, which takes about a
   - **Inspect**: pan the map and click a cell to see its attributes.
   - **Brush**: paint cells with the chosen ecosystem type. Brush widths are 50, 150, 250, 450 or 850 m.
   - **Rectangle**: drag to fill a rectangle.
+  - **Lot**: click a tax lot to paint every cell whose center is inside it. A lot smaller than a cell paints the cell it sits in. Lot shapes come from the city's Digital Tax Map (*TAX_LOT_POLYGON*), one lot at a time as the pointer moves.
   - **Fill**: click to repaint a connected area of one type.
   - **Restore**: paint cells back to their existing type.
   - The type button opens the palette of 28 ecosystem types, grouped by category.
