@@ -6,7 +6,8 @@ import { CELL, CELL_AREA, HA_PER_CELL } from './grid.js';
 
 export const $ = (sel) => document.querySelector(sel);
 
-const fmt = (v, d = 0) => v.toLocaleString('en-US', { maximumFractionDigits: d, minimumFractionDigits: d });
+// Negative digits round to tens, hundreds, thousands.
+const fmt = (v, d = 0) => (d < 0 ? Math.round(v / 10 ** -d) * 10 ** -d : v).toLocaleString('en-US', { maximumFractionDigits: Math.max(0, d), minimumFractionDigits: Math.max(0, d) });
 const signed = (v, d = 0) => (v > 0 ? '+' : v < 0 ? '−' : '±') + fmt(Math.abs(v), d);
 const pct = (v) => `${Math.round(100 * v)}%`;
 const esc = (s) => String(s).replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
@@ -214,8 +215,8 @@ const METRICS = [
   },
   {
     key: 'heat', name: 'Heat',
-    detail: (m) => `Surfaces average ${fmt(m.meanAnomaly, 1)} °F hotter than a fully green landscape; ${fmt(m.hotHa)} ha of heat islands`,
-    value: (m) => m.meanAnomaly, unit: '°F', digits: 1, lowerIsBetter: true,
+    detail: (m) => `Summer surfaces average ${fmt(m.meanTemp, 1)} °F; ${fmt(m.hotHa)} ha of heat islands (105 °F or more)`,
+    value: (m) => m.meanTemp, unit: '°F', digits: 1, lowerIsBetter: true,
   },
   {
     key: 'carbon', name: 'Carbon',
@@ -224,7 +225,28 @@ const METRICS = [
   },
 ];
 
+// People living with the flooding and heat, shown beside the score but not in it.
+const PEOPLE = [
+  { name: 'Residents', value: (p) => p.population, digits: -2, unit: '', neutral: true },
+  { name: 'Residents flooded', value: (p) => p.floodedPeople, digits: -2, lowerIsBetter: true },
+  { name: 'Living in heat islands', value: (p) => p.hotPeople, digits: -2, lowerIsBetter: true },
+  { name: '…in heat-vulnerable ZIP codes', value: (p) => p.hotVulnerable, digits: -2, lowerIsBetter: true },
+  { name: 'Summer surface where people live', value: (p) => p.peopleTemp, digits: 1, unit: ' °F', lowerIsBetter: true },
+];
+
+function renderPeople(today, vision) {
+  $('#people').innerHTML = PEOPLE.map((spec) => {
+    const t = spec.value(today.people), v = spec.value(vision.people);
+    const step = spec.digits < 0 ? 10 ** -spec.digits / 2 : 0.05;
+    const d = v - t;
+    const cls = spec.neutral ? '' : (spec.lowerIsBetter ? d < 0 : d > 0) ? 'good' : 'bad';
+    const change = Math.abs(d) < step ? '' : ` <span class="${cls}">${signed(d, spec.digits)}${spec.unit ?? ''}</span>`;
+    return `<tr><th scope="row">${spec.name}</th><td>${fmt(v, spec.digits)}${spec.unit ?? ''}${change}</td></tr>`;
+  }).join('');
+}
+
 export function renderScore(today, vision) {
+  renderPeople(today, vision);
   // Each 1 ha cell moves the borough-wide score by only a few thousandths of a
   // point, so whole numbers hide most edits: show a decimal and an unrounded delta.
   $('#score-vision').textContent = fmt(vision.overall, 1);
@@ -268,8 +290,11 @@ export function renderInspector(world, vision, results, i) {
     ['Existing type', swatch(ex)],
     ['Current type', swatch(cur) + (ex === cur ? '' : ' <em>(changed)</em>')],
     ['Coastal flood', p.coastalDepth[i] > 0 ? `${fmt(p.coastalDepth[i], 1)} ft deep` : 'Dry'],
-    ['Stormwater', p.stormDepth[i] >= 0.5 ? `${fmt(p.stormDepth[i], 1)} in ponding` : 'Drains'],
-    ['Heat', `${signed(p.heat[i], 1)} °F`],
+    ['Stormwater', p.stormFrac[i] ? `${fmt(100 * p.stormFrac[i])}% of the cell, ${fmt(p.stormDepth[i])} in deep` : 'Drains'],
+    ['Summer surface', `${fmt(p.heat[i], 1)} °F` + (Number.isFinite(c.surfaceTemp[i]) ? ` (measured ${fmt(c.surfaceTemp[i], 1)} °F)` : ' (modeled)')],
+    ['Street trees', `${fmt(100 * c.canopy[i])}% shade`],
+    ['Residents', `${fmt(p.residents[i])}` + (Math.round(p.residents[i]) !== Math.round(c.residents[i]) ? ` <em>(${fmt(c.residents[i])} today)</em>` : '')],
+    ['Heat vulnerability', c.hvi[i] ? `${fmt(c.hvi[i], 1)} / 5 (ZIP code)` : 'Unknown'],
     ['Habitat', `${fmt(p.habitat[i], 1)} / 10`],
   ];
   $('#cell-info').innerHTML = rows.map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`).join('');

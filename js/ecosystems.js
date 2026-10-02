@@ -11,6 +11,9 @@
 // barrier         feet a shoreline structure raises the edge above grade
 // attenuation     feet of storm surge absorbed per 100 m crossed
 // sewered         share of the surface drained by storm sewers
+// shade           share of the ground shaded by trees (street trees are added per cell)
+// albedo          share of sunlight reflected
+// kc              crop coefficient: evapotranspiration relative to a reference lawn
 
 export const CATEGORIES = [
   { id: 'built', name: 'Built' },
@@ -70,6 +73,23 @@ export const ECOSYSTEMS = [
   t('riprap', 'water', 'Riprap', 0.50, 0.05, 2, 0, '#a59f95', { barrier: 2 }),
   t('bulkhead', 'water', 'Bulkhead and seawall', 1, 0, 0.5, 0, '#5d6670', { barrier: 4 }),
 ];
+
+// Cooling parameters for the InVEST Urban Cooling model, from typical values
+// in its documentation and NYC land cover: [shade, albedo, kc]. Shade on built
+// and street types counts only backyards and courtyards, because each cell's
+// street trees come from the tree census.
+const COOLING = {
+  'res-low': [0.15, 0.15, 0.35], 'res-mid': [0.08, 0.15, 0.2], 'res-high': [0.05, 0.18, 0.15],
+  'com-low': [0.03, 0.15, 0.1], 'com-mid': [0.03, 0.17, 0.08], 'com-high': [0.02, 0.2, 0.05],
+  'ind-low': [0.02, 0.17, 0.08], 'ind-mid': [0.02, 0.17, 0.05], 'ind-high': [0.02, 0.2, 0.05],
+  street: [0, 0.1, 0.1], 'green-street': [0.35, 0.15, 0.5], highway: [0, 0.1, 0.05], rail: [0.05, 0.15, 0.3],
+  parking: [0, 0.1, 0.03], port: [0, 0.15, 0.03],
+  plaza: [0.1, 0.2, 0.2], park: [0.25, 0.2, 0.8], garden: [0.15, 0.2, 0.9], cemetery: [0.3, 0.2, 0.75],
+  meadow: [0.05, 0.22, 0.85], forest: [0.9, 0.15, 1],
+  water: [0, 0.06, 1], 'salt-marsh': [0, 0.15, 1], 'fresh-wetland': [0.2, 0.15, 1], beach: [0, 0.3, 0.1],
+  'living-shoreline': [0.05, 0.15, 0.8], riprap: [0, 0.2, 0.05], bulkhead: [0, 0.15, 0],
+};
+for (const e of ECOSYSTEMS) [e.shade, e.albedo, e.kc] = COOLING[e.id];
 
 export const TYPE_INDEX = Object.fromEntries(ECOSYSTEMS.map((e, i) => [e.id, i]));
 export const typeById = (id) => ECOSYSTEMS[TYPE_INDEX[id]];
