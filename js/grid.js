@@ -37,6 +37,9 @@ const LAND_USE = {
 };
 const GROUPS = ['res', 'com', 'ind', 'trans', 'open', 'parking', 'vacant'];
 
+// Building heights the rainwater capture policy can apply above (floors).
+export const TOWER_FLOORS = [10, 13, 20, 30];
+
 export const sizeForFloors = (f) => (f >= 13 ? 'high' : f >= 5 ? 'mid' : 'low');
 
 // Crown diameter in feet from trunk diameter in inches, a rough fit for NYC's
@@ -103,6 +106,9 @@ export function buildGrid({ boundary, parks = [], hydrography = [], shoreline = 
   const floorWeighted = new Float32Array(all * GROUPS.length);
   const residents = new Float32Array(all);
   const hviSum = new Float32Array(all), hviArea = new Float32Array(all);
+  // Roof area of buildings taller than each of TOWER_FLOORS, and how many there are.
+  const towerRoof = TOWER_FLOORS.map(() => new Float32Array(all));
+  const towers = TOWER_FLOORS.map(() => 0);
   const lotResidents = census ? censusToLots(lots, census) : null;
   lots.forEach((lot, n) => {
     const group = LAND_USE[lot.landuse];
@@ -114,11 +120,16 @@ export function buildGrid({ boundary, parks = [], hydrography = [], shoreline = 
     const spread = (2 * rad + 1) ** 2;
     const people = lotResidents ? lotResidents[n] : 0;
     const v = hvi?.[lot.zip];
+    // A building's roof is about its floor area over its floors (the average
+    // floorplate; podiums make some roofs larger), and never more than its lot.
+    const roof = lot.floors > 0 ? Math.min(area, (lot.bldgarea * SQFT) / lot.floors) : 0;
+    TOWER_FLOORS.forEach((f, t) => { if (lot.floors > f && roof) towers[t]++; });
     for (let dr = -rad; dr <= rad; dr++) for (let dc = -rad; dc <= rad; dc++) {
       const cc = c + dc, rr = r + dr;
       if (cc < 0 || rr < 0 || cc >= cols || rr >= rows) continue;
       const cell = rr * cols + cc;
       residents[cell] += people / spread;
+      TOWER_FLOORS.forEach((f, t) => { if (lot.floors > f) towerRoof[t][cell] += roof / spread; });
       if (v) { hviSum[cell] += (v * area) / spread; hviArea[cell] += area / spread; }
       if (g < 0) continue;
       const k = cell * GROUPS.length + g;
@@ -179,6 +190,7 @@ export function buildGrid({ boundary, parks = [], hydrography = [], shoreline = 
     residents: new Float32Array(N), // 2020 Census population, placed on homes
     hvi: new Float32Array(N), // Heat Vulnerability Index of the ZIP code, 1–5 (0 = unknown)
     canopy: new Float32Array(N), // share of the cell shaded by street trees
+    towerRoof: TOWER_FLOORS.map(() => new Float32Array(N)), // m² of roof on buildings taller than each of TOWER_FLOORS
     surfaceTemp: new Float32Array(N).fill(NaN), // °F, summer surface temperature measured by Landsat
     // NYC's Stormwater Flood Maps: share of the cell flooded, and average depth
     // in inches where it is, for the moderate (2.13 in/hr) and extreme (3.66 in/hr) storms.
@@ -198,6 +210,7 @@ export function buildGrid({ boundary, parks = [], hydrography = [], shoreline = 
     cells.residents[i] = residents[k];
     cells.hvi[i] = hviArea[k] ? hviSum[k] / hviArea[k] : 0;
     cells.canopy[i] = Math.min(1, crown[k] / CELL_AREA);
+    TOWER_FLOORS.forEach((f, t) => { cells.towerRoof[t][i] = towerRoof[t][k]; });
     if (cover && cover.n[k]) {
       cells.tree[i] = cover.tree[k] / cover.n[k];
       cells.grass[i] = cover.grass[k] / cover.n[k];
@@ -310,6 +323,7 @@ export function buildGrid({ boundary, parks = [], hydrography = [], shoreline = 
       name: 'Brooklyn',
       boundary,
       totalArea: landSamples * (CELL / SUB) ** 2, // m²
+      towers, // buildings taller than each of TOWER_FLOORS
     },
     grid: { x0, y0, cols, rows, lon0: (w + e) / 2, lat0: (s + n) / 2 },
     cells,
