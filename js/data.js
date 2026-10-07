@@ -18,7 +18,7 @@ export const LAYERS = {
     needsGeometry: true,
     ids: ['gthc-hcne', 'tqmj-j8zm', '7t3b-ywvw'],
     search: 'Borough Boundaries',
-    keep: (p) => /brooklyn/i.test(p.boro_name ?? p.boroname ?? p.BoroName ?? '') || String(p.boro_code ?? p.borocode ?? p.BoroCode) === '3',
+    // All boroughs load, so Queens across the land border is known to be land.
   },
   parks: { label: 'Parks properties', needsGeometry: true, ids: ['enfh-gkve'], search: 'Parks Properties' },
   hydrography: { label: 'Hydrography', needsGeometry: true, ids: ['pjs3-c3z5', 'drh3-e2fd'], search: 'Hydrography' },
@@ -44,6 +44,8 @@ export const LAYERS = {
   streetTrees: { label: 'Street trees (2015 census)', ids: ['uvpi-gqnh'], search: '2015 Street Tree Census - Tree Data' },
   heatVulnerability: { label: 'Heat Vulnerability Index (DOHMH)', ids: ['4mhf-duep'], search: 'Heat Vulnerability Index Rankings' },
 };
+
+export const isBrooklyn = (p) => /brooklyn/i.test(p.boro_name ?? p.boroname ?? p.BoroName ?? '') || String(p.boro_code ?? p.borocode ?? p.BoroCode) === '3';
 
 // 2020 Census population and housing units for each Brooklyn census block,
 // extracted from the Census Bureau's PL 94-171 redistricting file by
