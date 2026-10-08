@@ -46,7 +46,7 @@ export const sizeForFloors = (f) => (f >= 13 ? 'high' : f >= 5 ? 'mid' : 'low');
 // common street trees (a 12 in London plane spreads about 25 ft).
 const crownFeet = (dbh) => Math.min(60, 5 + 1.6 * dbh);
 
-export function buildGrid({ boundary, parks = [], hydrography = [], shoreline = [], floodplain = [], wetlands = [], lots = [], elevation = null, surfaceTemp = null, stormwater = null, landcover = null, trees = [], census = null, hvi = null }) {
+export function buildGrid({ boundary, otherBoroughs = [], parks = [], hydrography = [], shoreline = [], floodplain = [], wetlands = [], lots = [], elevation = null, surfaceTemp = null, stormwater = null, landcover = null, trees = [], census = null, hvi = null }) {
   const [w, s, e, n] = bboxOf(boundary);
   const proj = makeProjection((w + e) / 2, (s + n) / 2);
   const [bx0, by0] = proj.toXY(w, s);
@@ -62,6 +62,9 @@ export function buildGrid({ boundary, parks = [], hydrography = [], shoreline = 
   // Rasterize every polygon layer onto the sample lattice.
   const land = new Uint8Array(samples);
   rasterizePolygons(boundary, lattice, proj, (i) => { land[i] = 1; });
+  // Queens (and Manhattan across the East River) are land, not open water.
+  const other = new Uint8Array(samples);
+  rasterizePolygons(otherBoroughs, lattice, proj, (i) => { other[i] = 1; });
   const hydro = new Uint8Array(samples);
   rasterizePolygons(hydrography.filter(isArea), lattice, proj, (i) => { hydro[i] = 1; });
   const flood = new Uint8Array(samples);
@@ -83,7 +86,7 @@ export function buildGrid({ boundary, parks = [], hydrography = [], shoreline = 
 
   // Aggregate samples to cells.
   const all = cols * rows;
-  const landFrac = new Float32Array(all), hydroFrac = new Float32Array(all), floodFrac = new Float32Array(all);
+  const landFrac = new Float32Array(all), otherFrac = new Float32Array(all), hydroFrac = new Float32Array(all), floodFrac = new Float32Array(all);
   const parkCounts = new Uint8Array(all * PARK_CLASSES.length);
   const wetCounts = new Uint8Array(all * WETLAND_CLASSES.length);
   const share = 1 / (SUB * SUB);
@@ -92,6 +95,7 @@ export function buildGrid({ boundary, parks = [], hydrography = [], shoreline = 
       const i = r * lattice.cols + c;
       const k = Math.floor(r / SUB) * cols + Math.floor(c / SUB);
       if (land[i]) landFrac[k] += share;
+      else if (other[i]) otherFrac[k] += share;
       if (hydro[i]) hydroFrac[k] += share;
       if (flood[i]) floodFrac[k] += share;
       if (park[i] && land[i]) parkCounts[k * PARK_CLASSES.length + park[i] - 1]++;
@@ -152,18 +156,21 @@ export function buildGrid({ boundary, parks = [], hydrography = [], shoreline = 
   // Measured land cover: average every pixel whose center falls in the cell.
   const cover = landcover && measureCover(landcover, proj, { x0, y0, cols, rows });
 
-  // Keep land cells plus a margin of water around the shore.
+  // Keep land cells plus a margin of water around the shore. Cells that are
+  // mostly another borough's land are left out: they are neither Brooklyn nor sea.
   const isLand = (k) => landFrac[k] >= 0.5 && hydroFrac[k] < 0.5;
+  const isOtherBorough = (k) => !isLand(k) && landFrac[k] + otherFrac[k] >= 0.5;
   const keep = new Uint8Array(all);
   for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++) {
     if (landFrac[r * cols + c] === 0) continue;
     for (let dr = -WATER_MARGIN; dr <= WATER_MARGIN; dr++) for (let dc = -WATER_MARGIN; dc <= WATER_MARGIN; dc++) {
       const rr = r + dr, cc = c + dc;
-      if (rr >= 0 && cc >= 0 && rr < rows && cc < cols) keep[rr * cols + cc] = 1;
+      if (rr >= 0 && cc >= 0 && rr < rows && cc < cols && !isOtherBorough(rr * cols + cc)) keep[rr * cols + cc] = 1;
     }
   }
 
-  // Shoreline: cells crossed by the shoreline layer, or land touching water.
+  // Shoreline: cells crossed by the shoreline layer, or land touching water
+  // (the land border with Queens is not shoreline).
   const shore = new Uint8Array(all);
   rasterizeLines(shoreline, { x0, y0, step: CELL, cols, rows }, proj, (k) => { shore[k] = 1; });
   for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++) {
@@ -171,7 +178,9 @@ export function buildGrid({ boundary, parks = [], hydrography = [], shoreline = 
     if (!isLand(k)) continue;
     for (const [dr, dc] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
       const rr = r + dr, cc = c + dc;
-      if (rr < 0 || cc < 0 || rr >= rows || cc >= cols || !isLand(rr * cols + cc)) shore[k] = 1;
+      if (rr < 0 || cc < 0 || rr >= rows || cc >= cols) { shore[k] = 1; continue; }
+      const kk = rr * cols + cc;
+      if (!isLand(kk) && !isOtherBorough(kk)) shore[k] = 1;
     }
   }
 
