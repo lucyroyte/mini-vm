@@ -62,7 +62,7 @@ Describe each entity with the following parameters:
     - policies it adopts (see Policy)
 - Policy
     - low-flow toilets: on/off, gallons per flush required
-    - rainwater capture: on/off, buildings taller than a number of floors, inches of rain each roof tank holds, new construction only or existing buildings too
+    - Unified Stormwater Rule: on/off, inches of rain each new site holds, whether existing towers or all buildings are retrofitted too
 - Climate scenario
     - rainfall intensity (inches per hour)
     - sea level rise
