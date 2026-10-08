@@ -37,13 +37,21 @@ const LAND_USE = {
 };
 const GROUPS = ['res', 'com', 'ind', 'trans', 'open', 'parking', 'vacant'];
 
+// Yearly emissions of a building without a Local Law 84 report, in kg CO2e per
+// square foot of floor area, used only when no benchmarking data loads. Close to
+// Brooklyn's reported averages for 2022–2024.
+const DEFAULT_INTENSITY = { res: 5.5, com: 6.5, ind: 5, other: 5.5 };
+// Reports above this are left out as likely errors (a data center or hospital
+// can reach about 40 kg/sq ft).
+const MAX_INTENSITY = 60;
+
 export const sizeForFloors = (f) => (f >= 13 ? 'high' : f >= 5 ? 'mid' : 'low');
 
 // Crown diameter in feet from trunk diameter in inches, a rough fit for NYC's
 // common street trees (a 12 in London plane spreads about 25 ft).
 const crownFeet = (dbh) => Math.min(60, 5 + 1.6 * dbh);
 
-export function buildGrid({ boundary, otherBoroughs = [], parks = [], hydrography = [], shoreline = [], floodplain = [], wetlands = [], lots = [], elevation = null, surfaceTemp = null, stormwater = null, landcover = null, trees = [], census = null, hvi = null }) {
+export function buildGrid({ boundary, otherBoroughs = [], parks = [], hydrography = [], shoreline = [], floodplain = [], wetlands = [], lots = [], elevation = null, surfaceTemp = null, stormwater = null, landcover = null, trees = [], census = null, hvi = null, benchmarks = null }) {
   const [w, s, e, n] = bboxOf(boundary);
   const proj = makeProjection((w + e) / 2, (s + n) / 2);
   const [bx0, by0] = proj.toXY(w, s);
@@ -108,6 +116,8 @@ export function buildGrid({ boundary, otherBoroughs = [], parks = [], hydrograph
   const residents = new Float32Array(all);
   const hviSum = new Float32Array(all), hviArea = new Float32Array(all);
   const lotResidents = census ? censusToLots(lots, census) : null;
+  const { lotEmissions, lotMeasured, intensity } = buildingEmissions(lots, benchmarks);
+  const emissions = new Float32Array(all), measuredEmissions = new Float32Array(all);
   lots.forEach((lot, n) => {
     const group = LAND_USE[lot.landuse];
     const g = group ? GROUPS.indexOf(group) : -1;
@@ -123,6 +133,8 @@ export function buildGrid({ boundary, otherBoroughs = [], parks = [], hydrograph
       if (cc < 0 || rr < 0 || cc >= cols || rr >= rows) continue;
       const cell = rr * cols + cc;
       residents[cell] += people / spread;
+      emissions[cell] += lotEmissions[n] / spread;
+      if (lotMeasured[n]) measuredEmissions[cell] += lotEmissions[n] / spread;
       if (v) { hviSum[cell] += (v * area) / spread; hviArea[cell] += area / spread; }
       if (g < 0) continue;
       const k = cell * GROUPS.length + g;
@@ -186,6 +198,9 @@ export function buildGrid({ boundary, otherBoroughs = [], parks = [], hydrograph
     tree: new Float32Array(N).fill(NaN), grass: new Float32Array(N).fill(NaN), paved: new Float32Array(N).fill(NaN),
     existing: new Uint8Array(N),
     residents: new Float32Array(N), // 2020 Census population, placed on homes
+    // Yearly building emissions, t CO2e: reported under Local Law 84 or estimated
+    // from floor area; and the reported part.
+    emissions: new Float32Array(N), measuredEmissions: new Float32Array(N),
     hvi: new Float32Array(N), // Heat Vulnerability Index of the ZIP code, 1–5 (0 = unknown)
     canopy: new Float32Array(N), // share of the cell shaded by street trees
     surfaceTemp: new Float32Array(N).fill(NaN), // °F, summer surface temperature measured by Landsat
@@ -205,6 +220,8 @@ export function buildGrid({ boundary, otherBoroughs = [], parks = [], hydrograph
     cells.inFloodplain[i] = floodFrac[k] >= 0.25 ? 1 : 0;
     cells.onShoreline[i] = isLand(k) && shore[k] ? 1 : 0;
     cells.residents[i] = residents[k];
+    cells.emissions[i] = emissions[k];
+    cells.measuredEmissions[i] = measuredEmissions[k];
     cells.hvi[i] = hviArea[k] ? hviSum[k] / hviArea[k] : 0;
     cells.canopy[i] = Math.min(1, crown[k] / CELL_AREA);
     if (cover && cover.n[k]) {
@@ -324,7 +341,50 @@ export function buildGrid({ boundary, otherBoroughs = [], parks = [], hydrograph
     cells,
     index,
     missingElevation,
+    emissionIntensity: intensity,
   };
+}
+
+// Yearly emissions of each tax lot's buildings, t CO2e. A lot with a Local Law
+// 84 report gets its share of the reported total (a property spanning several
+// lots is split by floor area). Every other lot gets its floor area times the
+// average reported intensity for its land use group, kg CO2e per sq ft.
+function buildingEmissions(lots, benchmarks) {
+  const lotEmissions = new Float32Array(lots.length), lotMeasured = new Uint8Array(lots.length);
+  const byBbl = new Map();
+  lots.forEach((lot, n) => { if (lot.bbl) byBbl.set(lot.bbl, n); });
+  // Reported tonnes and floor area by land use group, for the average intensity.
+  const tonnes = {}, area = {};
+  const group = (lot) => {
+    const g = LAND_USE[lot.landuse];
+    return g === 'res' || g === 'com' || g === 'ind' ? g : 'other';
+  };
+  for (const p of benchmarks ?? []) {
+    if (!(p.area > 0) || (1000 * p.tonnes) / p.area > MAX_INTENSITY) continue;
+    const matched = p.bbls.map((b) => byBbl.get(b)).filter((n) => n != null);
+    if (!matched.length) continue;
+    const floor = matched.reduce((a, n) => a + lots[n].bldgarea, 0);
+    for (const n of matched) {
+      lotEmissions[n] += floor ? (p.tonnes * lots[n].bldgarea) / floor : p.tonnes / matched.length;
+      lotMeasured[n] = 1;
+    }
+    const main = matched.reduce((a, n) => (lots[n].bldgarea > lots[a].bldgarea ? n : a));
+    for (const g of [group(lots[main]), 'all']) {
+      tonnes[g] = (tonnes[g] ?? 0) + p.tonnes;
+      area[g] = (area[g] ?? 0) + p.area;
+    }
+  }
+  // Need a fair sample before trusting a group's average.
+  const rate = (g) => (area[g] > 1e6 ? (1000 * tonnes[g]) / area[g] : null);
+  const all = rate('all');
+  // Other lots (utilities, garages, parks buildings) take the overall average:
+  // their few reports include power plants, which would skew a group average.
+  const intensity = Object.fromEntries(Object.keys(DEFAULT_INTENSITY).map((g) => [g, (g === 'other' ? null : rate(g)) ?? all ?? DEFAULT_INTENSITY[g]]));
+  intensity.reported = all != null;
+  lots.forEach((lot, n) => {
+    if (!lotMeasured[n]) lotEmissions[n] = (lot.bldgarea * intensity[group(lot)]) / 1000;
+  });
+  return { lotEmissions, lotMeasured, intensity };
 }
 
 // Splits each census block's population among its tax lots in proportion to

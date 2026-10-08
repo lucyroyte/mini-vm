@@ -3,7 +3,7 @@
 // for the map. Running them on the existing types gives "today"; running them
 // on a vision's types gives the vision.
 
-import { ECOSYSTEMS, WATER } from './ecosystems.js';
+import { ECOSYSTEMS, WATER, SEQUESTRATION, sequestrationOf } from './ecosystems.js';
 import { neighbors, CELL, HA_PER_CELL } from './grid.js';
 
 // A design 100-year coastal storm: still-water level in feet (NAVD88) before
@@ -29,6 +29,14 @@ export const SCENARIO_PRESETS = {
     { value: 6, label: '2100 extreme (72 in)' },
   ],
 };
+
+// Emissions. Car and truck travel: NYC's greenhouse gas inventory puts on-road
+// emissions at about 15 million t CO2e a year (2016), about 1.75 t per New
+// Yorker; Brooklyn households own fewer cars than the city's, so a rough
+// 1.4 t CO2e per resident a year. Stored carbon is tonnes of carbon; × 44/12
+// gives the CO2 it would become.
+export const VEHICLE_T_PER_RESIDENT = 1.4;
+export const CO2_PER_C = 44 / 12;
 
 // How much flooding a cell's use puts at risk (people and property).
 const EXPOSURE = { built: 1, transportation: 0.5, open: 0.1, water: 0 };
@@ -96,6 +104,10 @@ export function prepare(world) {
   const sum = new Float64Array(ECOSYSTEMS.length), n = new Float64Array(ECOSYSTEMS.length);
   for (let i = 0; i < N; i++) { sum[world.cells.existing[i]] += world.cells.residents[i]; n[world.cells.existing[i]]++; }
   world.model.density = Float32Array.from(sum, (v, t) => (n[t] && ECOSYSTEMS[t].category === 'built' ? v / n[t] : 0));
+  // Average building emissions per cell of each built type today, likewise.
+  const emit = new Float64Array(ECOSYSTEMS.length);
+  for (let i = 0; i < N; i++) emit[world.cells.existing[i]] += world.cells.emissions?.[i] ?? 0;
+  world.model.emitRate = Float32Array.from(emit, (v, t) => (n[t] && ECOSYSTEMS[t].category === 'built' ? v / n[t] : 0));
 }
 
 // Coastal flooding: storm tide spreads inland from the sea over every cell lower
@@ -353,6 +365,32 @@ function residents(world, types) {
   return Float32Array.from(types, (t, i) => (t === existing[i] ? today[i] : density[t]));
 }
 
+// Yearly building emissions of each cell, t CO2e: today's (reported or
+// estimated) where the cell is unchanged, today's average for its type where a
+// vision changed it. Parks, streets and water have no buildings.
+function buildingEmissions(world, types) {
+  const { existing, emissions } = world.cells;
+  const { emitRate } = world.model;
+  return Float32Array.from(types, (t, i) => (t === existing[i] ? emissions?.[i] ?? emitRate[t] : emitRate[t]));
+}
+
+// Yearly carbon uptake of each cell, t CO2e: from measured tree and grass cover
+// where the cell is unchanged, from its type (plus street trees) elsewhere.
+function sequestration(world, types) {
+  const { existing, tree, grass, canopy } = world.cells;
+  return Float32Array.from(types, (ti, i) => {
+    const t = ECOSYSTEMS[ti];
+    let rate;
+    if (ti === existing[i] && tree?.[i] >= 0 && t.category !== 'water') {
+      rate = SEQUESTRATION.tree * tree[i] + SEQUESTRATION.grass * grass[i];
+    } else {
+      rate = sequestrationOf(t);
+      if (t.category === 'built' || t.category === 'transportation') rate += SEQUESTRATION.tree * canopy[i];
+    }
+    return rate * HA_PER_CELL;
+  });
+}
+
 // Summer surface temperature: Landsat's measurement where there is one, plus
 // the model's change from today; the model alone elsewhere.
 function surfaceTemperature(world, types, anomaly) {
@@ -371,14 +409,18 @@ export function runModels(world, types, scenario) {
   const heatMap = surfaceTemperature(world, types, heat(world, types));
   const hab = habitat(world, types);
   const residentsMap = residents(world, types);
+  const buildingMap = buildingEmissions(world, types);
+  const uptakeMap = sequestration(world, types);
 
   let land = 0, flooded = 0, exposed = 0, coastalCells = 0, stormCells = 0;
-  let heatSum = 0, hot = 0, habSum = 0, carbon = 0;
+  let heatSum = 0, hot = 0, habSum = 0, carbon = 0, buildingTonnes = 0, uptake = 0;
   let population = 0, floodedPeople = 0, hotPeople = 0, hotVulnerable = 0, heatPeople = 0;
   const natural = new Map();
   for (let i = 0; i < N; i++) {
     const t = ECOSYSTEMS[types[i]];
     carbon += t.carbon * HA_PER_CELL;
+    buildingTonnes += buildingMap[i];
+    uptake += uptakeMap[i];
     if (cells.land[i] < 0.5) continue;
     land++;
     const p = residentsMap[i];
@@ -401,6 +443,8 @@ export function runModels(world, types, scenario) {
   const meanHabitat = habSum / land;
   const diversity = [...natural.values()].filter((n) => n * ha >= MIN_HABITAT_HA).length;
 
+  const vehicleTonnes = population * VEHICLE_T_PER_RESIDENT;
+  const emittedTonnes = buildingTonnes + vehicleTonnes;
   const metrics = {
     flooding: {
       // Homes, businesses and streets flooded. Residents are reported in
@@ -423,8 +467,19 @@ export function runModels(world, types, scenario) {
       totalTonnes: carbon, perHa: carbon / (land * ha),
     },
   };
+  // Carbon emitted and taken up each year, t CO2e. Not part of the climate score.
+  const emissions = {
+    buildings: buildingTonnes, vehicles: vehicleTonnes, emitted: emittedTonnes,
+    uptake, net: emittedTonnes - uptake, storedCO2e: carbon * CO2_PER_C,
+  };
   // Who lives with the flooding and heat. Not part of the climate score.
   const people = { population, floodedPeople, hotPeople, hotVulnerable, peopleTemp: peopleHeat };
   const overall = (metrics.flooding.score + metrics.biodiversity.score + metrics.heat.score + metrics.carbon.score) / 4;
-  return { overall, metrics, people, perCell: { coastalDepth, stormDepth: storm.depth, stormFrac: storm.frac, heat: heatMap, habitat: hab.value, residents: residentsMap } };
+  return {
+    overall, metrics, people, emissions,
+    perCell: {
+      coastalDepth, stormDepth: storm.depth, stormFrac: storm.frac, heat: heatMap, habitat: hab.value, residents: residentsMap,
+      buildingEmissions: buildingMap, uptake: uptakeMap,
+    },
+  };
 }

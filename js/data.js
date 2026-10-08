@@ -43,6 +43,11 @@ export const LAYERS = {
   buildings: { label: 'Building footprints', needsGeometry: true, ids: ['5zhs-2jue', 'nqwf-w8eh'], search: 'Building Footprints' },
   streetTrees: { label: 'Street trees (2015 census)', ids: ['uvpi-gqnh'], search: '2015 Street Tree Census - Tree Data' },
   heatVulnerability: { label: 'Heat Vulnerability Index (DOHMH)', ids: ['4mhf-duep'], search: 'Heat Vulnerability Index Rankings' },
+  benchmarking: {
+    label: 'Building energy and emissions (Local Law 84)',
+    ids: ['5zyy-y8am'],
+    search: 'NYC Building Energy and Water Data Disclosure for Local Law 84 (2022-Present)',
+  },
 };
 
 export const isBrooklyn = (p) => /brooklyn/i.test(p.boro_name ?? p.boroname ?? p.BoroName ?? '') || String(p.boro_code ?? p.borocode ?? p.BoroCode) === '3';
@@ -187,11 +192,11 @@ async function fetchCSV(dataset, params, label, onProgress, parse) {
 export async function loadLots(onProgress) {
   const dataset = await resolve(LAYERS.landcover);
   const lots = await fetchCSV(dataset, {
-    $select: 'latitude,longitude,landuse,numfloors,lotarea,bldgarea,unitsres,bctcb2020,zipcode',
+    $select: 'latitude,longitude,landuse,numfloors,lotarea,bldgarea,unitsres,bctcb2020,zipcode,bbl',
     $where: "borough='BK' AND latitude IS NOT NULL",
-  }, 'PLUTO', onProgress, ([lat, lon, landuse, floors, lotarea, bldgarea, units, block, zip]) => (lat ? {
+  }, 'PLUTO', onProgress, ([lat, lon, landuse, floors, lotarea, bldgarea, units, block, zip, bbl]) => (lat ? {
     lat: +lat, lon: +lon, landuse: landuse.padStart(2, '0'), floors: +floors || 0, lotarea: +lotarea || 0, bldgarea: +bldgarea || 0,
-    units: +units || 0, block, zip,
+    units: +units || 0, block, zip, bbl: String(Math.round(+bbl || 0)),
   } : null));
   return { lots, source: `${DOMAIN}/d/${dataset.id}`, name: dataset.meta.name };
 }
@@ -212,6 +217,31 @@ export async function loadHeatVulnerability() {
   const rows = await getJSON(`${DOMAIN}/resource/${dataset.id}.json?$limit=1000`);
   const byZip = Object.fromEntries(rows.map((r) => [r.zcta20 ?? r.zipcode ?? r.zcta, +r.hvi]).filter(([z, v]) => z && v));
   return { byZip, source: `${DOMAIN}/d/${dataset.id}`, name: dataset.meta.name };
+}
+
+// Yearly greenhouse gas emissions that large buildings (over 25,000 sq ft)
+// report under Local Law 84, from their metered electricity, gas, oil and
+// steam, for the latest report year. A property covering several tax lots lists
+// all of their BBLs. Campuses report a parent property and its buildings; the
+// parent's total is kept and its buildings dropped, so nothing counts twice.
+export async function loadBenchmarking() {
+  const dataset = await resolve(LAYERS.benchmarking);
+  const rows = await getJSON(`${DOMAIN}/resource/${dataset.id}.json?${new URLSearchParams({
+    $select: 'property_id,parent_property_id,report_year,nyc_borough_block_and_lot,total_location_based_ghg,property_gfa_calculated',
+    $where: "borough='BROOKLYN'",
+    $limit: 50000,
+  })}`);
+  const year = Math.max(...rows.map((r) => +r.report_year || 0));
+  const latest = rows.filter((r) => +r.report_year === year);
+  const ids = new Set(latest.map((r) => r.property_id));
+  const properties = [];
+  for (const r of latest) {
+    const tonnes = +r.total_location_based_ghg;
+    if (!(tonnes > 0) || ids.has(r.parent_property_id)) continue;
+    const bbls = String(r.nyc_borough_block_and_lot ?? '').replace(/-/g, '').match(/\b3\d{9}\b/g);
+    if (bbls) properties.push({ bbls: [...new Set(bbls)], tonnes, area: +r.property_gfa_calculated || 0 });
+  }
+  return { properties, year, source: `${DOMAIN}/d/${dataset.id}`, name: `${dataset.meta.name}, ${year} reports` };
 }
 
 export async function loadCensusBlocks(url = CENSUS_BLOCKS_URL) {

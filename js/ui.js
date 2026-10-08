@@ -36,7 +36,12 @@ const VALUE_INFO = {
   carbon: {
     label: 'Carbon', unit: 't/ha', name: 'Carbon stored',
     about: 'Carbon held in the soil and plants, in tonnes per hectare (a hectare is about 2.5 acres). Wetlands and forests store the most; buildings and pavement store almost none. These are rough typical values for comparing ecosystems.',
-    used: 'Carbon: the borough total adds up every cell. An average of 60 t/ha across Brooklyn would score 100.',
+    used: 'Carbon: the borough total adds up every cell. An average of 60 t/ha across Brooklyn would score 100. Each tonne of carbon would become 3.67 t of CO2 if released.',
+  },
+  sequestration: {
+    label: 'Uptake', unit: 't CO2e/ha/yr', name: 'Carbon taken up each year', digits: 1,
+    about: 'CO2 that plants and soil take out of the air each year, in tonnes of CO2 equivalent per hectare. Tree canopy takes up about 10 t/ha a year, grass about 1; salt marsh buries about 8 in its mud. Rough typical values.',
+    used: 'Carbon emitted and taken up: uptake is subtracted from building and vehicle emissions to give the net. Where a vision leaves a cell as it is, the tree and grass cover measured from 2017 aerial imagery is used instead, and street trees are added to buildings and streets.',
   },
   storage: {
     label: 'Storage', unit: 'in', name: 'Rain storage', digits: 1,
@@ -220,7 +225,7 @@ const METRICS = [
   },
   {
     key: 'carbon', name: 'Carbon',
-    detail: (m) => `${fmt(m.totalTonnes / 1000, 1)} thousand tonnes of carbon stored in soil and plants (${fmt(m.perHa, 1)} t/ha)`,
+    detail: (m) => `${fmt(m.totalTonnes / 1000, 1)} thousand tonnes of carbon stored in soil and plants (${fmt(m.perHa, 1)} t/ha); emissions are shown below`,
     value: (m) => m.totalTonnes / 1000, unit: 'kt C', digits: 1,
   },
 ];
@@ -234,6 +239,32 @@ const PEOPLE = [
   { name: 'Summer surface where people live', value: (p) => p.peopleTemp, digits: 1, unit: ' °F', lowerIsBetter: true },
 ];
 
+// Carbon emitted and taken up each year, beside the carbon stored. Tonnes of
+// CO2e; shown in thousands, since Brooklyn emits millions a year.
+const EMISSIONS = [
+  { name: 'Buildings (energy use)', value: (e) => e.buildings },
+  { name: 'Cars and trucks', value: (e) => e.vehicles },
+  { name: 'Taken up by plants and soil', value: (e) => -e.uptake },
+  { name: 'Net emitted a year', value: (e) => e.net, cls: 'total' },
+  { name: 'Stored in soil and plants', value: (e) => e.storedCO2e, cls: 'stored', higherIsBetter: true },
+];
+
+function renderEmissions(world, today, vision) {
+  $('#emissions').innerHTML = EMISSIONS.map((spec) => {
+    const t = spec.value(today.emissions) / 1000, v = spec.value(vision.emissions) / 1000;
+    const d = v - t;
+    const digits = Math.abs(v) < 100 ? 1 : 0;
+    const cls = (spec.higherIsBetter ? d > 0 : d < 0) ? 'good' : 'bad';
+    const change = Math.abs(d) < 0.05 ? '' : ` <span class="${cls}">${signed(d, 1)}k</span>`;
+    const value = v < 0 ? `−${fmt(-v, digits)}` : fmt(v, digits);
+    return `<tr class="${spec.cls ?? ''}"><th scope="row">${spec.name}</th><td>${value}k${change}</td></tr>`;
+  }).join('');
+  const r = world.emissionIntensity;
+  const rates = r ? ` Other buildings use ${r.reported ? 'the reported average for their use' : 'typical values'}: homes ${fmt(r.res, 1)}, commercial ${fmt(r.com, 1)}, industrial ${fmt(r.ind, 1)} kg CO2e per sq ft.` : '';
+  $('#emissions-note').textContent = 'In thousands of t CO2e. Buildings over 25,000 sq ft use what they reported under Local Law 84.' + rates
+    + ' New buildings in a vision get today\'s average for their type. Cars and trucks are 1.4 t a resident, so they follow where people live; the stored line is a total, not a yearly amount.';
+}
+
 function renderPeople(today, vision) {
   $('#people').innerHTML = PEOPLE.map((spec) => {
     const t = spec.value(today.people), v = spec.value(vision.people);
@@ -245,8 +276,9 @@ function renderPeople(today, vision) {
   }).join('');
 }
 
-export function renderScore(today, vision) {
+export function renderScore(world, today, vision) {
   renderPeople(today, vision);
+  renderEmissions(world, today, vision);
   // Each 1 ha cell moves the borough-wide score by only a few thousandths of a
   // point, so whole numbers hide most edits: show a decimal and an unrounded delta.
   $('#score-vision').textContent = fmt(vision.overall, 1);
@@ -296,6 +328,9 @@ export function renderInspector(world, vision, results, i) {
     ['Residents', `${fmt(p.residents[i])}` + (Math.round(p.residents[i]) !== Math.round(c.residents[i]) ? ` <em>(${fmt(c.residents[i])} today)</em>` : '')],
     ['Heat vulnerability', c.hvi[i] ? `${fmt(c.hvi[i], 1)} / 5 (ZIP code)` : 'Unknown'],
     ['Habitat', `${fmt(p.habitat[i], 1)} / 10`],
+    ['Building emissions', `${fmt(p.buildingEmissions[i], p.buildingEmissions[i] < 10 ? 1 : 0)} t CO2e a year`
+      + (vision.current[i] !== c.existing[i] ? ' <em>(type average)</em>' : c.measuredEmissions?.[i] >= 0.5 * c.emissions?.[i] && c.emissions[i] > 0 ? ' <em>(mostly reported, LL84)</em>' : c.emissions?.[i] > 0 ? ' <em>(estimated from floor area)</em>' : '')],
+    ['Carbon uptake', `${fmt(p.uptake[i], 2)} t CO2e a year`],
   ];
   $('#cell-info').innerHTML = rows.map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`).join('');
 }

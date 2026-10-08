@@ -4,6 +4,7 @@
 // vegetation      0–1, vegetation cover
 // habitat         0–10, habitat value
 // carbon          carbon stored, tonnes C per hectare; relative values
+// sequestration   carbon taken up each year, tonnes CO2e per hectare (derived below)
 // color           map color
 //
 // Model parameters (used by models.js, not part of the entity description):
@@ -90,6 +91,20 @@ const COOLING = {
   'living-shoreline': [0.05, 0.15, 0.8], riprap: [0, 0.2, 0.05], bulkhead: [0, 0.15, 0],
 };
 for (const e of ECOSYSTEMS) [e.shade, e.albedo, e.kc] = COOLING[e.id];
+
+// Carbon taken up each year by plants and soil, t CO2e per hectare. Urban tree
+// canopy takes up about 0.28 kg of carbon per m² a year (Nowak et al. 2013,
+// "Carbon storage and sequestration by trees in urban and community areas of
+// the United States"), about 10 t CO2e per hectare of canopy; grass and meadow
+// about 1. Wetlands bury carbon in their sediment: salt marsh about 0.2 kg C
+// per m² a year (Chmura et al. 2003), freshwater wetland about half that.
+// Street trees are added per cell from the tree census.
+export const SEQUESTRATION = { tree: 10, grass: 1 };
+const WETLAND_SEQUESTRATION = { 'salt-marsh': 8, 'fresh-wetland': 4, 'living-shoreline': 3 };
+export const sequestrationOf = (e, tree = e.shade, green = e.vegetation) => (
+  WETLAND_SEQUESTRATION[e.id] ?? SEQUESTRATION.tree * tree + SEQUESTRATION.grass * Math.max(0, green - tree)
+);
+for (const e of ECOSYSTEMS) e.sequestration = Math.round(10 * sequestrationOf(e)) / 10;
 
 export const TYPE_INDEX = Object.fromEntries(ECOSYSTEMS.map((e, i) => [e.id, i]));
 export const typeById = (id) => ECOSYSTEMS[TYPE_INDEX[id]];
