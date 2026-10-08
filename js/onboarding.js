@@ -139,7 +139,7 @@ export function initOnboarding({ world, map, getVision }) {
     {
       target: '#tools',
       title: 'Painting tools',
-      text: '<b>Inspect</b> pans and shows a cell\'s details. <b>Brush</b>, <b>Rectangle</b>, <b>Lot</b> and <b>Fill</b> repaint cells with the chosen type. <b>Restore</b> paints cells back to how they are today.',
+      text: '<b>Inspect</b> pans and shows a cell\'s details. <b>Brush</b>, <b>Rectangle</b>, <b>Lot</b> and <b>Fill</b> repaint cells with the chosen type. <b>Restore</b> paints cells back to how they are today. <b>My lot</b> opens one tax lot so you can try a green roof, rain tank, cool roof and more on it.',
     },
     {
       target: '.score-card',
