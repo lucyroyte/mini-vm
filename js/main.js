@@ -1,5 +1,5 @@
 import { ECOSYSTEMS, TYPE_INDEX } from './ecosystems.js';
-import { LAYERS, loadLayer, loadLots, loadLotAt, loadStreetTrees, loadHeatVulnerability, loadCensusBlocks } from './data.js';
+import { LAYERS, isBrooklyn, loadLayer, loadLots, loadLotAt, loadStreetTrees, loadHeatVulnerability, loadCensusBlocks } from './data.js';
 import { loadElevation, ELEVATION_SOURCE } from './elevation.js';
 import { loadSurfaceTemperature, loadStormwaterMaps, SURFACE_TEMP_SOURCE, STORMWATER_SOURCE } from './rasters.js';
 import { loadLandCover, LANDCOVER_SOURCE } from './landcover.js';
@@ -14,7 +14,7 @@ import {
   $, renderPalette, renderScore, renderInspector, renderBorough, renderLegend, renderVisionList,
 } from './ui.js';
 
-const CACHE_KEY = 'world-v6';
+const CACHE_KEY = 'world-v7';
 const CACHE_DAYS = 30;
 
 // Loading ------------------------------------------------------------------------
@@ -40,7 +40,9 @@ async function loadWorld() {
 
   const sources = [];
   const s = step(LAYERS.boundary.label);
-  const boundary = await loadLayer('boundary', s.progress).catch((err) => { s.fail(err); throw err; });
+  const boroughs = await loadLayer('boundary', s.progress).catch((err) => { s.fail(err); throw err; });
+  const boundary = { ...boroughs, features: boroughs.features.filter((f) => isBrooklyn(f.properties ?? {})) };
+  const otherBoroughs = boroughs.features.filter((f) => !isBrooklyn(f.properties ?? {}));
   if (!boundary.features.length) throw new Error('The borough boundary dataset has no Brooklyn feature.');
   s.done();
   sources.push({ label: LAYERS.boundary.label, url: boundary.source, name: boundary.name, ok: true });
@@ -81,6 +83,7 @@ async function loadWorld() {
   await new Promise((r) => setTimeout(r, 30));
   const built = buildGrid({
     boundary: boundary.features,
+    otherBoroughs,
     parks: parks?.features,
     hydrography: hydrography?.features,
     shoreline: shoreline?.features,
