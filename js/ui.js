@@ -205,7 +205,7 @@ export function describeType(t) {
 const METRICS = [
   {
     key: 'flooding', name: 'Flooding',
-    detail: (m) => `${fmt(m.floodedHa)} ha flooded (${fmt(m.coastalHa)} coastal, ${fmt(m.stormHa)} stormwater); ${fmt(m.exposedHa)} ha of homes, businesses and streets at risk`,
+    detail: (m, r) => `${fmt(m.floodedHa)} ha flooded (${fmt(m.coastalHa)} coastal, ${fmt(m.stormHa)} stormwater); ${fmt(m.exposedHa)} ha of homes, businesses and streets at risk; ${gallons(r.rain.flooding)} of rain standing in the streets`,
     value: (m) => m.exposedHa, unit: 'ha at risk', lowerIsBetter: true,
   },
   {
@@ -224,6 +224,41 @@ const METRICS = [
     value: (m) => m.totalTonnes / 1000, unit: 'kt C', digits: 1,
   },
 ];
+
+// Million gallons, in words that fit the size: 2.6 billion gal, 340 million gal, 52,000 gal.
+function gallons(mg, sign = false) {
+  const a = Math.abs(mg);
+  const text = a >= 1000 ? `${fmt(a / 1000, a >= 10000 ? 0 : 1)} billion gal`
+    : a >= 1 ? `${fmt(a, a >= 100 ? 0 : 1)} million gal`
+      : `${fmt(a * 1e6, -3)} gal`;
+  return sign ? (mg > 0 ? '+' : '−') + text : text;
+}
+
+// Where a storm's rain goes, in gallons. Colors key the stacked bar.
+const RAIN = [
+  { key: 'tanks', name: 'Held on site (stormwater rule)', color: '#5b8fd0', better: 1 },
+  { key: 'stored', name: 'Held by soil, plants and ponds', color: '#2f9e6b', better: 1 },
+  { key: 'infiltrated', name: 'Soaked into the ground', color: '#a0784c', better: 1 },
+  { key: 'sewers', name: 'Carried by sewers', color: '#8a96a3', better: -1 },
+  { key: 'flooding', name: 'Flooding streets and buildings', color: '#d1453b', better: -1 },
+  { key: 'runoff', name: 'Running off to waterways', color: '#e9a23b', better: -1 },
+];
+
+function renderRain(today, vision) {
+  const t = today.rain, v = vision.rain;
+  $('#rain-note').textContent = `One hour of rain at ${fmt(v.rainfall, 2)} in/hr drops ${gallons(v.total)} on Brooklyn. Most sewers here are combined, so sewer water past the treatment plants' capacity overflows into the harbor.`;
+  const shown = RAIN.filter((r) => v[r.key] > 0 || t[r.key] > 0);
+  $('#rain-bar').innerHTML = shown.map((r) => `<div style="flex-basis:${(100 * v[r.key]) / (v.total || 1)}%;background:${r.color}" title="${r.name}"></div>`).join('');
+  $('#rain-bar').setAttribute('aria-label', shown.map((r) => `${r.name} ${pct(v[r.key] / (v.total || 1))}`).join(', '));
+  const row = (name, key, value, d, better, cls = '') => {
+    const change = Math.abs(d) < 0.0005 ? '' : ` <span class="${d * better > 0 ? 'good' : 'bad'}">${gallons(d, true)}</span>`;
+    return `<tr class="${cls}"><th scope="row">${key}${name}</th><td>${gallons(value)}${change}</td></tr>`;
+  };
+  $('#rain').innerHTML = shown.map((r) => row(r.name, `<span class="key" style="background:${r.color}"></span>`, v[r.key], v[r.key] - t[r.key], r.better)).join('')
+    + row('Stormwater: rain that runs off (sewers, flooding, waterways)', '', v.stormwater, v.stormwater - t.stormwater, -1, 'aside')
+    + row('Sewage in the same sewers this hour', '', v.sewage, v.sewage - t.sewage, -1)
+    + (v.surge || t.surge ? row('Seawater on land (coastal storm)', '', v.surge, v.surge - t.surge, -1) : '');
+}
 
 // People living with the flooding and heat, shown beside the score but not in it.
 const PEOPLE = [
@@ -258,6 +293,7 @@ function renderRows(el, specs, today, vision) {
 export function renderScore(today, vision) {
   renderRows($('#people'), PEOPLE, today, vision);
   renderRows($('#water'), WATER_ROWS, today, vision);
+  renderRain(today, vision);
   // Each 1 ha cell moves the borough-wide score by only a few thousandths of a
   // point, so whole numbers hide most edits: show a decimal and an unrounded delta.
   $('#score-vision').textContent = fmt(vision.overall, 1);
@@ -279,7 +315,7 @@ export function renderScore(today, vision) {
           <div class="fill" style="width:${v.score}%"></div>
           <div class="mark" style="left:${t.score}%" title="Today: ${Math.round(t.score)}"></div>
         </div>
-        <div class="metric-detail">${spec.detail(v)} ${change}</div>
+        <div class="metric-detail">${spec.detail(v, vision)} ${change}</div>
       </div>`;
   }).join('');
 }
