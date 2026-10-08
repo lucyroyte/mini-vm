@@ -19,6 +19,7 @@
       <button data-tool="lot" title="Paint a whole tax lot (L)">Lot</button>
       <button data-tool="fill" title="Fill a connected area of one type (F)">Fill</button>
       <button data-tool="restore" title="Paint cells back to how they are today (E)">Restore</button>
+      <button data-tool="mylot" title="Open a tax lot and try a green roof, rain tank and more on it (M)">My lot</button>
     </div>
     <div class="group" id="brush-size" title="Brush size">
       <label for="brush">Size</label>
@@ -72,6 +73,56 @@
       </div>
     </div>
   </header>
+
+  <aside id="lot-panel" hidden aria-label="Lot">
+    <div class="lot-head">
+      <div>
+        <h2 id="lot-title"></h2>
+        <p class="note" id="lot-facts"></p>
+      </div>
+      <button id="lot-close" class="icon" title="Close" aria-label="Close">✕</button>
+    </div>
+    <div id="lot-body" hidden>
+      <section>
+        <h3>Try on this lot</h3>
+        <label class="field">Green roof <output id="lot-green-out"></output><input type="range" id="lot-green" min="0" max="100" step="5"></label>
+        <label class="field">Cool (white) roof <output id="lot-cool-out"></output><input type="range" id="lot-cool" min="0" max="100" step="5"></label>
+        <label class="field">Solar panels <output id="lot-solar-out"></output><input type="range" id="lot-solar" min="0" max="100" step="5"></label>
+        <label class="field">Rain tank <select id="lot-tank"></select></label>
+        <label class="field">Rain garden in place of paving <output id="lot-garden-out"></output><input type="range" id="lot-garden" min="0" step="10"></label>
+        <label class="check"><input type="checkbox" id="lot-downspouts"> Run the roof's downspouts into the rain garden</label>
+        <label class="field inline">Trees to plant <input type="number" id="lot-trees" min="0" max="20" step="1"></label>
+        <div class="policy" id="lot-toilets-row">
+          <label class="check"><input type="checkbox" id="lot-toilets"> Low-flow toilets</label>
+          <select id="lot-gpf" aria-label="Gallons per flush"></select>
+        </div>
+        <button id="lot-reset">Reset</button>
+      </section>
+      <section>
+        <h3>This storm</h3>
+        <p class="note" id="lot-storm-note"></p>
+        <div class="stack" id="lot-rain-bar"></div>
+        <table id="lot-storm" class="lot-table"></table>
+        <p class="note" id="lot-flood"></p>
+      </section>
+      <section>
+        <h3>A normal year</h3>
+        <table id="lot-year" class="lot-table"></table>
+      </section>
+      <section>
+        <h3>Summer heat</h3>
+        <table id="lot-heat" class="lot-table"></table>
+      </section>
+      <section>
+        <h3>Energy, carbon and water</h3>
+        <table id="lot-energy" class="lot-table"></table>
+      </section>
+      <details>
+        <summary>How the lot is modeled</summary>
+        <p class="note" id="lot-notes"></p>
+      </details>
+    </div>
+  </aside>
 
   <div id="palette" hidden role="dialog" aria-label="Ecosystem types"></div>
   <div id="legend" hidden></div>
