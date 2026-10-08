@@ -10,7 +10,7 @@ import { neighbors, CELL, CELL_AREA, HA_PER_CELL, TOWER_FLOORS } from './grid.js
 // sea level rise, roughly FEMA's 1% annual chance level along Brooklyn's shore.
 export const STORM_TIDE_FT = 10;
 export const SEWER_CAPACITY = 1.75; // in/hr, NYC storm sewer design standard
-const SOIL_INFILTRATION = 1.0; // in/hr for fully pervious ground
+export const SOIL_INFILTRATION = 1.0; // in/hr for fully pervious ground
 const PONDING_FLOOD_IN = 4; // inches of standing water that counts as flooded
 const MIN_HABITAT_HA = 10; // a habitat type counts toward diversity once it covers this much land
 

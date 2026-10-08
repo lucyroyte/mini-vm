@@ -221,6 +221,30 @@ details { margin-top: 10px; }
 
 .maplibregl-ctrl-bottom-left { margin-bottom: 4px; }
 
+/* Lot panel */
+#lot-panel {
+  position: fixed; top: 64px; left: 10px; bottom: 60px; z-index: 3; width: 320px;
+  background: var(--surface); border-radius: 10px; box-shadow: var(--shadow);
+  padding: 12px 14px; overflow-y: auto;
+}
+.lot-head { display: flex; align-items: flex-start; gap: 8px; }
+.lot-head > div { flex: 1; }
+#lot-panel h2 { margin: 0; font-size: 16px; }
+#lot-panel h3 { margin: 0 0 6px; font-size: 14px; }
+#lot-panel .note { margin: 4px 0; font-size: 12px; color: var(--muted); }
+#lot-panel section { padding: 10px 0; border-top: 1px solid var(--line); }
+#lot-panel .field { margin: 6px 0; font-size: 13px; grid-template-columns: 1fr auto; }
+#lot-panel .field input, #lot-panel .field select { grid-column: 1 / -1; }
+#lot-panel .field output { color: var(--muted); }
+#lot-panel .field.inline { display: flex; align-items: center; justify-content: space-between; }
+#lot-panel .field.inline input { width: 64px; border: 1px solid var(--line); border-radius: 6px; padding: 3px 6px; }
+#lot-panel .policy { margin: 8px 0; }
+.lot-table { width: 100%; border-collapse: collapse; font-size: 13px; font-variant-numeric: tabular-nums; }
+.lot-table th { text-align: left; font-weight: 400; padding: 2px 6px 2px 0; vertical-align: top; }
+.lot-table td { text-align: right; white-space: nowrap; vertical-align: top; }
+.lot-table td > span { display: block; font-size: 12px; }
+.lot-table .key { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 6px; vertical-align: -1px; }
+
 @media (max-width: 760px) {
   :root { --panel-width: 100vw; }
   #toolbar { right: 10px; }
@@ -232,4 +256,5 @@ details { margin-top: 10px; }
   .palette-grid { grid-template-columns: 1fr 1fr; }
   #legend { left: 10px; bottom: calc(45vh + 10px); }
   .brand { width: 100%; }
+  #lot-panel { left: 10px; right: 10px; width: auto; bottom: calc(45vh + 10px); }
 }
