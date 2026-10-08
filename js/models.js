@@ -4,7 +4,7 @@
 // on a vision's types gives the vision.
 
 import { ECOSYSTEMS, WATER } from './ecosystems.js';
-import { neighbors, CELL, HA_PER_CELL } from './grid.js';
+import { neighbors, CELL, CELL_AREA, HA_PER_CELL, TOWER_FLOORS } from './grid.js';
 
 // A design 100-year coastal storm: still-water level in feet (NAVD88) before
 // sea level rise, roughly FEMA's 1% annual chance level along Brooklyn's shore.
@@ -29,6 +29,71 @@ export const SCENARIO_PRESETS = {
     { value: 6, label: '2100 extreme (72 in)' },
   ],
 };
+
+// Policies a vision can adopt. Today has none of them.
+//
+// Low-flow toilets: every toilet is replaced with one that uses `gpf` gallons a
+// flush. Brooklyn's toilets average about 2.2 gallons today (a mix of 1.6 gpf
+// toilets, required since 1994, older 3.5 gpf ones, and newer 1.28 gpf ones);
+// people flush about 5 times a day at home (AWWA Residential End Uses of Water,
+// 2016). Only residents are counted, not workers.
+//
+// Unified Stormwater Rule (NYC DEP, in force since February 2022): new
+// development that disturbs 20,000 sq ft or more, or adds 5,000 sq ft or more
+// of hard surface, must manage the first 1.5 in of rain on site, retention
+// (tanks, green roofs, soil) first. Each painted cell (2,500 m², about
+// 27,000 sq ft) counts as one site, so every painted building, parking lot,
+// port or plaza is covered, holding the rule's depth of rain from its hard
+// surface. The rule leaves existing buildings alone; `retrofit` asks what if
+// buildings over 20 floors ('towers') or all buildings ('all') did it too.
+// Tower roofs are PLUTO floor area over floors. A site that holds 1.5 in per
+// storm, emptied between storms, keeps about 80% of a year's rain out of the sewers.
+export const POLICY = {
+  toiletGpfToday: 2.2,
+  flushesPerDay: 5,
+  indoorGpcd: 55, // gallons per resident per day that go down the drain at home
+  sanitaryPeak: 1.5, // daytime sewage flow over the daily average, when a storm hits
+  annualRainIn: 46.2, // NYC's normal year, Central Park
+  annualCapture: 0.8,
+};
+export const NO_POLICIES = {
+  toilets: { on: false, gpf: 1.28 },
+  stormwaterRule: { on: false, inches: 1.5, retrofit: 'none' },
+};
+export const POLICY_OPTIONS = {
+  gpf: [{ value: 1.28, label: '1.28 gal (WaterSense)' }, { value: 0.8, label: '0.8 gal (ultra-low)' }],
+  inches: [1, 1.5, 2, 3].map((v) => ({ value: v, label: `First ${v} in of rain${v === 1.5 ? ' (the rule)' : ''}` })),
+  retrofit: [
+    { value: 'none', label: 'New construction only (the rule)' },
+    { value: 'towers', label: `Also retrofit buildings over ${TOWER_FLOORS} floors` },
+    { value: 'all', label: 'Also retrofit every building' },
+  ],
+};
+const COVERED = new Set(ECOSYSTEMS.flatMap((t, i) => (t.category === 'built' || ['parking', 'port', 'plaza'].includes(t.id) ? [i] : [])));
+const GAL = 0.00378541; // m³
+const inPerHr = (galPerDay, peak = 1) => (galPerDay * peak * GAL) / 24 / CELL_AREA / 0.0254; // over one cell
+
+// Sewage each cell's residents send into the sewers, gallons a day.
+function sewage(residents, policies) {
+  const saved = policies.toilets.on ? Math.max(0, POLICY.toiletGpfToday - policies.toilets.gpf) * POLICY.flushesPerDay : 0;
+  return Float32Array.from(residents, (p) => p * (POLICY.indoorGpcd - saved));
+}
+
+// Hard surface (m²) in each cell whose first inches of rain are held on site.
+function retainedArea(world, types, policies) {
+  const out = new Float32Array(world.cells.count);
+  const p = policies.stormwaterRule;
+  if (!p.on) return out;
+  const { existing } = world.cells;
+  const { towerRoof } = world.cells;
+  for (let i = 0; i < out.length; i++) {
+    const built = ECOSYSTEMS[types[i]].category === 'built';
+    if (types[i] !== existing[i]) out[i] = COVERED.has(types[i]) ? ECOSYSTEMS[types[i]].imperviousness * CELL_AREA : 0;
+    else if (p.retrofit === 'all' && built) out[i] = surface(world, types, i).imperviousness * CELL_AREA;
+    else if (p.retrofit === 'towers' && built) out[i] = Math.min(CELL_AREA, towerRoof[i]);
+  }
+  return out;
+}
 
 // How much flooding a cell's use puts at risk (people and property).
 const EXPOSURE = { built: 1, transportation: 0.5, open: 0.1, water: 0 };
@@ -138,24 +203,46 @@ function surface(world, types, i) {
 
 // Rain the ground, plants and sewers can't take, routed downhill: for each
 // cell, the inches of excess runoff (over one cell's area) that reach it.
-function runoff(world, types, rainfall) {
+// Sewage takes up part of the sewers' capacity (most of Brooklyn has combined
+// sewers), and sites under the stormwater rule hold their first inches.
+// Also returns where the storm's rain goes, in inches over one cell summed over
+// cells: the water reaching each cell (its rain plus what runs onto it) fills
+// on-site retention, then storage, then soaks in, then goes down the sewers,
+// and the rest runs on downhill.
+function runoff(world, types, rainfall, sanitary, roof, tankInches) {
   const { down, order } = world.model;
   const { count } = world.cells;
   const spare = new Float32Array(count);
   const flow = new Float32Array(count);
+  const fill = new Float32Array(count * 4); // tanks, storage, soil, sewer: inches each cell can take
   for (let i = 0; i < count; i++) {
     const t = ECOSYSTEMS[types[i]];
     if (types[i] === WATER) { spare[i] = Infinity; continue; }
     const { imperviousness } = surface(world, types, i);
-    const capacity = t.storage + (1 - imperviousness) * SOIL_INFILTRATION + SEWER_CAPACITY * t.sewered * imperviousness;
+    const sewer = Math.max(0, SEWER_CAPACITY * imperviousness - inPerHr(sanitary[i], POLICY.sanitaryPeak)) * t.sewered;
+    const tanks = roof[i] ? (tankInches * roof[i]) / CELL_AREA : 0;
+    const soil = (1 - imperviousness) * SOIL_INFILTRATION;
+    fill.set([tanks, t.storage, soil, sewer], i * 4);
+    const capacity = t.storage + tanks + soil + sewer;
     flow[i] = Math.max(0, rainfall - capacity);
     spare[i] = Math.max(0, capacity - rainfall);
   }
+  const budget = { rain: 0, tanks: 0, storage: 0, soil: 0, sewer: 0 };
+  const keys = ['tanks', 'storage', 'soil', 'sewer'];
+  const inflow = new Float32Array(count);
   for (const i of order) {
     const out = Math.max(0, flow[i] - spare[i]);
-    if (out && down[i] >= 0) flow[down[i]] += out;
+    if (out && down[i] >= 0) { flow[down[i]] += out; inflow[down[i]] += out; }
+    if (types[i] === WATER) continue;
+    budget.rain += rainfall;
+    let left = rainfall + inflow[i];
+    for (let k = 0; k < 4; k++) {
+      const take = Math.min(left, fill[i * 4 + k]);
+      budget[keys[k]] += take;
+      left -= take;
+    }
   }
-  return flow;
+  return { flow, budget };
 }
 
 // Stormwater flooding. Today's flooding comes from NYC's Stormwater Flood Maps,
@@ -168,11 +255,16 @@ const STORMS = [2.13, 3.66];
 const DRY_BELOW = 1.5; // in/hr
 const RUNOFF_FLOOR = 0.25; // inches of runoff, so tiny catchments don't swing wildly
 const MAX_STORM_DEPTH_IN = 36;
-function stormwater(world, types, rainfall) {
+function stormwater(world, types, rainfall, policies, sanitary, roof) {
   const { count, stormFrac, stormDepth, existing } = world.cells;
   const cache = world.model.runoffToday;
-  if (cache.rainfall !== rainfall) Object.assign(cache, { rainfall, flow: runoff(world, existing, rainfall) });
-  const vision = types === existing ? cache.flow : runoff(world, types, rainfall);
+  if (cache.rainfall !== rainfall) {
+    const none = new Float32Array(count);
+    Object.assign(cache, { rainfall, ...runoff(world, existing, rainfall, sewage(world.cells.residents, NO_POLICIES), none, 0) });
+  }
+  const unchanged = types === existing && !policies.toilets.on && !policies.stormwaterRule.on;
+  const routed = unchanged ? cache : runoff(world, types, rainfall, sanitary, roof, policies.stormwaterRule.inches);
+  const vision = routed.flow;
 
   // Interpolate between the mapped storms.
   let a = 0, b = 0, t = 0, scale = 1;
@@ -194,7 +286,7 @@ function stormwater(world, types, rainfall) {
     frac[i] = f;
     depth[i] = d;
   }
-  return { frac, depth };
+  return { frac, depth, budget: routed.budget };
 }
 
 // Heat: the InVEST Urban Cooling model (Natural Capital Project). Each cell's
@@ -363,14 +455,16 @@ function surfaceTemperature(world, types, anomaly) {
   ));
 }
 
-export function runModels(world, types, scenario) {
+export function runModels(world, types, scenario, policies = NO_POLICIES) {
   const { cells } = world;
   const N = cells.count;
+  const residentsMap = residents(world, types);
+  const sanitary = sewage(residentsMap, policies);
+  const roof = retainedArea(world, types, policies);
   const coastalDepth = coastal(world, types, scenario.seaLevelRise);
-  const storm = stormwater(world, types, scenario.rainfall);
+  const storm = stormwater(world, types, scenario.rainfall, policies, sanitary, roof);
   const heatMap = surfaceTemperature(world, types, heat(world, types));
   const hab = habitat(world, types);
-  const residentsMap = residents(world, types);
 
   let land = 0, flooded = 0, exposed = 0, coastalCells = 0, stormCells = 0;
   let heatSum = 0, hot = 0, habSum = 0, carbon = 0;
@@ -425,6 +519,65 @@ export function runModels(world, types, scenario) {
   };
   // Who lives with the flooding and heat. Not part of the climate score.
   const people = { population, floodedPeople, hotPeople, hotVulnerable, peopleTemp: peopleHeat };
+  const water = waterUse(world, types, residentsMap, sanitary, roof, policies, scenario.rainfall);
+  const rain = rainBudget(world, types, storm, coastalDepth, scenario.rainfall, sanitary);
   const overall = (metrics.flooding.score + metrics.biodiversity.score + metrics.heat.score + metrics.carbon.score) / 4;
-  return { overall, metrics, people, perCell: { coastalDepth, stormDepth: storm.depth, stormFrac: storm.frac, heat: heatMap, habitat: hab.value, residents: residentsMap } };
+  return { overall, metrics, people, water, rain, perCell: { roof, coastalDepth, stormDepth: storm.depth, stormFrac: storm.frac, heat: heatMap, habitat: hab.value, residents: residentsMap } };
+}
+
+// Water: what residents draw and send to the treatment plants each day, and the
+// rain kept out of the sewers by roof tanks, per storm and per year. In million gallons.
+function waterUse(world, types, residentsMap, sanitary, retained, policies, rainfall) {
+  let people = 0, sewer = 0, area = 0;
+  for (let i = 0; i < residentsMap.length; i++) {
+    people += residentsMap[i];
+    sewer += sanitary[i];
+    area += retained[i];
+  }
+  const toilets = policies.toilets.on ? policies.toilets.gpf : POLICY.toiletGpfToday;
+  const m3ToMg = 1 / GAL / 1e6;
+  const held = Math.min(policies.stormwaterRule.inches, rainfall) * 0.0254; // a one-hour storm fills them no deeper than the rain
+  return {
+    toiletMgd: (people * POLICY.flushesPerDay * toilets) / 1e6,
+    sewageMgd: sewer / 1e6,
+    retainedHa: area / 1e4,
+    stormMg: area * held * m3ToMg,
+    yearMg: area * POLICY.annualRainIn * 0.0254 * POLICY.annualCapture * m3ToMg,
+  };
+}
+
+// Where the storm's rain goes, in million gallons. The routing above splits the
+// rain into on-site retention, storage, soil, sewers and runoff. Of the runoff, the
+// water standing in the mapped flooded areas is counted as flooding (the flooded
+// share of each cell times its depth), and the rest as running off to the
+// harbor, creeks and canals. Stormwater is the rain that runs off rather than
+// staying where it fell: the sewer, flooding and runoff shares together. Sewage
+// sharing the combined sewers during the storm hour, and seawater the coastal
+// storm pushes onto land, are reported beside it, apart from the rain.
+function rainBudget(world, types, storm, coastalDepth, rainfall, sanitary) {
+  const inches = CELL_AREA * 0.0254 / GAL / 1e6; // million gallons in an inch over one cell
+  const b = storm.budget;
+  let flood = 0, surge = 0;
+  for (let i = 0; i < types.length; i++) {
+    if (types[i] === WATER) continue;
+    flood += storm.frac[i] * storm.depth[i];
+    if (world.cells.land[i] >= 0.5) surge += coastalDepth[i] * 12;
+  }
+  const surface = Math.max(0, b.rain - b.tanks - b.storage - b.soil - b.sewer);
+  flood = Math.min(flood, surface);
+  let sewage = 0;
+  for (const g of sanitary) sewage += g;
+  return {
+    rainfall,
+    total: b.rain * inches,
+    tanks: b.tanks * inches,
+    stored: b.storage * inches,
+    infiltrated: b.soil * inches,
+    sewers: b.sewer * inches,
+    flooding: flood * inches,
+    runoff: (surface - flood) * inches,
+    stormwater: (b.sewer + surface) * inches,
+    sewage: (sewage * POLICY.sanitaryPeak) / 24 / 1e6, // gallons a day at the daytime peak, for one hour
+    surge: surge * inches,
+  };
 }

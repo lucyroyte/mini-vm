@@ -2,15 +2,18 @@
 
 import { ECOSYSTEMS, TYPE_INDEX } from './ecosystems.js';
 import { CELL, cellAt, cellCenter, cellsInSquare } from './grid.js';
+import { NO_POLICIES } from './models.js';
 
 const STORE = 'brooklyn-vision:visions';
 
 export class Vision {
   // Visions saved before cellSize was recorded were painted on the 100 m grid.
-  constructor(world, { name = 'Untitled vision', created = new Date().toISOString(), changes = [], cellSize = 100 } = {}) {
+  constructor(world, { name = 'Untitled vision', created = new Date().toISOString(), changes = [], cellSize = 100, policies = {} } = {}) {
     this.world = world;
     this.name = name;
     this.created = created;
+    // Policies the vision adopts, on top of the defaults for any left out.
+    this.policies = Object.fromEntries(Object.entries(NO_POLICIES).map(([k, v]) => [k, { ...v, ...policies[k] }]));
     this.current = Uint8Array.from(world.cells.existing); // current ecosystem type of every cell
     this.undoStack = [];
     this.redoStack = [];
@@ -76,6 +79,7 @@ export class Vision {
       name: this.name,
       created: this.created,
       cellSize: CELL,
+      policies: this.policies,
       changes: this.changedCells.map((i) => ({
         center: cellCenter(this.world, i).map((v) => +v.toFixed(6)),
         from: ECOSYSTEMS[this.world.cells.existing[i]].id,

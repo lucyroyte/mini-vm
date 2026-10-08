@@ -79,6 +79,12 @@
           <div><div class="score muted" id="score-today">–</div><div class="caption">Today</div></div>
         </div>
         <div id="metrics"></div>
+        <div class="rain-budget">
+          <h3>Where the rain goes</h3>
+          <p class="note" id="rain-note"></p>
+          <div class="stack" id="rain-bar" role="img"></div>
+          <table id="rain"></table>
+        </div>
       </section>
 
       <section class="people-card">
@@ -98,6 +104,25 @@
           <select id="slr"></select>
         </label>
         <p class="note">Flooding is modeled for a 100-year coastal storm on top of sea level rise, and a one-hour rain at the chosen intensity. Stormwater starts from NYC's Stormwater Flood Maps.</p>
+      </section>
+
+      <section class="policies-card">
+        <h3>Policies</h3>
+        <p class="note">Rules the vision adopts across Brooklyn. Today has none of them.</p>
+        <div class="policy">
+          <label class="check"><input type="checkbox" id="policy-toilets"> Require low-flow toilets</label>
+          <select id="policy-gpf" aria-label="Gallons per flush"></select>
+        </div>
+        <div class="policy">
+          <label class="check"><input type="checkbox" id="policy-swr"> Unified Stormwater Rule (2022)</label>
+          <select id="policy-inches" aria-label="Rain each site holds"></select>
+          <select id="policy-retrofit" aria-label="Which buildings"></select>
+        </div>
+        <table id="water"></table>
+        <details>
+          <summary>How policies are modeled</summary>
+          <p class="note" id="policy-notes"></p>
+        </details>
       </section>
 
       <section>
