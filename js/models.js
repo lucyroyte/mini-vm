@@ -520,7 +520,7 @@ export function runModels(world, types, scenario, policies = NO_POLICIES) {
   // Who lives with the flooding and heat. Not part of the climate score.
   const people = { population, floodedPeople, hotPeople, hotVulnerable, peopleTemp: peopleHeat };
   const water = waterUse(world, types, residentsMap, sanitary, roof, policies, scenario.rainfall);
-  const rain = rainBudget(world, types, storm, coastalDepth, scenario.rainfall);
+  const rain = rainBudget(world, types, storm, coastalDepth, scenario.rainfall, sanitary);
   const overall = (metrics.flooding.score + metrics.biodiversity.score + metrics.heat.score + metrics.carbon.score) / 4;
   return { overall, metrics, people, water, rain, perCell: { roof, coastalDepth, stormDepth: storm.depth, stormFrac: storm.frac, heat: heatMap, habitat: hab.value, residents: residentsMap } };
 }
@@ -550,9 +550,11 @@ function waterUse(world, types, residentsMap, sanitary, retained, policies, rain
 // rain into on-site retention, storage, soil, sewers and runoff. Of the runoff, the
 // water standing in the mapped flooded areas is counted as flooding (the flooded
 // share of each cell times its depth), and the rest as running off to the
-// harbor, creeks and canals. Seawater the coastal storm pushes onto land is
-// reported beside it, apart from the rain.
-function rainBudget(world, types, storm, coastalDepth, rainfall) {
+// harbor, creeks and canals. Stormwater is the rain that runs off rather than
+// staying where it fell: the sewer, flooding and runoff shares together. Sewage
+// sharing the combined sewers during the storm hour, and seawater the coastal
+// storm pushes onto land, are reported beside it, apart from the rain.
+function rainBudget(world, types, storm, coastalDepth, rainfall, sanitary) {
   const inches = CELL_AREA * 0.0254 / GAL / 1e6; // million gallons in an inch over one cell
   const b = storm.budget;
   let flood = 0, surge = 0;
@@ -563,6 +565,8 @@ function rainBudget(world, types, storm, coastalDepth, rainfall) {
   }
   const surface = Math.max(0, b.rain - b.tanks - b.storage - b.soil - b.sewer);
   flood = Math.min(flood, surface);
+  let sewage = 0;
+  for (const g of sanitary) sewage += g;
   return {
     rainfall,
     total: b.rain * inches,
@@ -572,6 +576,8 @@ function rainBudget(world, types, storm, coastalDepth, rainfall) {
     sewers: b.sewer * inches,
     flooding: flood * inches,
     runoff: (surface - flood) * inches,
+    stormwater: (b.sewer + surface) * inches,
+    sewage: (sewage * POLICY.sanitaryPeak) / 24 / 1e6, // gallons a day at the daytime peak, for one hour
     surge: surge * inches,
   };
 }

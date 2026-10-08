@@ -255,7 +255,9 @@ function renderRain(today, vision) {
     return `<tr class="${cls}"><th scope="row">${key}${name}</th><td>${gallons(value)}${change}</td></tr>`;
   };
   $('#rain').innerHTML = shown.map((r) => row(r.name, `<span class="key" style="background:${r.color}"></span>`, v[r.key], v[r.key] - t[r.key], r.better)).join('')
-    + (v.surge || t.surge ? row('Seawater on land (coastal storm)', '', v.surge, v.surge - t.surge, -1, 'aside') : '');
+    + row('Stormwater: rain that runs off (sewers, flooding, waterways)', '', v.stormwater, v.stormwater - t.stormwater, -1, 'aside')
+    + row('Sewage in the same sewers this hour', '', v.sewage, v.sewage - t.sewage, -1)
+    + (v.surge || t.surge ? row('Seawater on land (coastal storm)', '', v.surge, v.surge - t.surge, -1) : '');
 }
 
 // People living with the flooding and heat, shown beside the score but not in it.
