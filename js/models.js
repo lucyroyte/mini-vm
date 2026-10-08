@@ -195,26 +195,44 @@ function surface(world, types, i) {
 // cell, the inches of excess runoff (over one cell's area) that reach it.
 // Sewage takes up part of the sewers' capacity (most of Brooklyn has combined
 // sewers), and roof tanks hold rain where a policy captures it.
+// Also returns where the storm's rain goes, in inches over one cell summed over
+// cells: the water reaching each cell (its rain plus what runs onto it) fills
+// roof tanks, then on-site storage, then soaks in, then goes down the sewers,
+// and the rest runs on downhill.
 function runoff(world, types, rainfall, sanitary, roof, tankInches) {
   const { down, order } = world.model;
   const { count } = world.cells;
   const spare = new Float32Array(count);
   const flow = new Float32Array(count);
+  const fill = new Float32Array(count * 4); // tanks, storage, soil, sewer: inches each cell can take
   for (let i = 0; i < count; i++) {
     const t = ECOSYSTEMS[types[i]];
     if (types[i] === WATER) { spare[i] = Infinity; continue; }
     const { imperviousness } = surface(world, types, i);
     const sewer = Math.max(0, SEWER_CAPACITY * imperviousness - inPerHr(sanitary[i], POLICY.sanitaryPeak)) * t.sewered;
     const tanks = roof[i] ? (tankInches * roof[i]) / CELL_AREA : 0;
-    const capacity = t.storage + tanks + (1 - imperviousness) * SOIL_INFILTRATION + sewer;
+    const soil = (1 - imperviousness) * SOIL_INFILTRATION;
+    fill.set([tanks, t.storage, soil, sewer], i * 4);
+    const capacity = t.storage + tanks + soil + sewer;
     flow[i] = Math.max(0, rainfall - capacity);
     spare[i] = Math.max(0, capacity - rainfall);
   }
+  const budget = { rain: 0, tanks: 0, storage: 0, soil: 0, sewer: 0 };
+  const keys = ['tanks', 'storage', 'soil', 'sewer'];
+  const inflow = new Float32Array(count);
   for (const i of order) {
     const out = Math.max(0, flow[i] - spare[i]);
-    if (out && down[i] >= 0) flow[down[i]] += out;
+    if (out && down[i] >= 0) { flow[down[i]] += out; inflow[down[i]] += out; }
+    if (types[i] === WATER) continue;
+    budget.rain += rainfall;
+    let left = rainfall + inflow[i];
+    for (let k = 0; k < 4; k++) {
+      const take = Math.min(left, fill[i * 4 + k]);
+      budget[keys[k]] += take;
+      left -= take;
+    }
   }
-  return flow;
+  return { flow, budget };
 }
 
 // Stormwater flooding. Today's flooding comes from NYC's Stormwater Flood Maps,
@@ -232,10 +250,11 @@ function stormwater(world, types, rainfall, policies, sanitary, roof) {
   const cache = world.model.runoffToday;
   if (cache.rainfall !== rainfall) {
     const none = new Float32Array(count);
-    Object.assign(cache, { rainfall, flow: runoff(world, existing, rainfall, sewage(world.cells.residents, NO_POLICIES), none, 0) });
+    Object.assign(cache, { rainfall, ...runoff(world, existing, rainfall, sewage(world.cells.residents, NO_POLICIES), none, 0) });
   }
   const unchanged = types === existing && !policies.toilets.on && !policies.rainCapture.on;
-  const vision = unchanged ? cache.flow : runoff(world, types, rainfall, sanitary, roof, policies.rainCapture.inches);
+  const routed = unchanged ? cache : runoff(world, types, rainfall, sanitary, roof, policies.rainCapture.inches);
+  const vision = routed.flow;
 
   // Interpolate between the mapped storms.
   let a = 0, b = 0, t = 0, scale = 1;
@@ -257,7 +276,7 @@ function stormwater(world, types, rainfall, policies, sanitary, roof) {
     frac[i] = f;
     depth[i] = d;
   }
-  return { frac, depth };
+  return { frac, depth, budget: routed.budget };
 }
 
 // Heat: the InVEST Urban Cooling model (Natural Capital Project). Each cell's
@@ -491,8 +510,9 @@ export function runModels(world, types, scenario, policies = NO_POLICIES) {
   // Who lives with the flooding and heat. Not part of the climate score.
   const people = { population, floodedPeople, hotPeople, hotVulnerable, peopleTemp: peopleHeat };
   const water = waterUse(world, types, residentsMap, sanitary, roof, policies, scenario.rainfall);
+  const rain = rainBudget(world, types, storm, coastalDepth, scenario.rainfall);
   const overall = (metrics.flooding.score + metrics.biodiversity.score + metrics.heat.score + metrics.carbon.score) / 4;
-  return { overall, metrics, people, water, perCell: { roof, coastalDepth, stormDepth: storm.depth, stormFrac: storm.frac, heat: heatMap, habitat: hab.value, residents: residentsMap } };
+  return { overall, metrics, people, water, rain, perCell: { roof, coastalDepth, stormDepth: storm.depth, stormFrac: storm.frac, heat: heatMap, habitat: hab.value, residents: residentsMap } };
 }
 
 // Water: what residents draw and send to the treatment plants each day, and the
@@ -517,5 +537,35 @@ function waterUse(world, types, residentsMap, sanitary, roof, policies, rainfall
     newTowerCells: newTowers,
     stormMg: roofM2 * tank * m3ToMg,
     yearMg: roofM2 * POLICY.annualRainIn * 0.0254 * POLICY.annualCapture * m3ToMg,
+  };
+}
+
+// Where the storm's rain goes, in million gallons. The routing above splits the
+// rain into roof tanks, storage, soil, sewers and runoff. Of the runoff, the
+// water standing in the mapped flooded areas is counted as flooding (the flooded
+// share of each cell times its depth), and the rest as running off to the
+// harbor, creeks and canals. Seawater the coastal storm pushes onto land is
+// reported beside it, apart from the rain.
+function rainBudget(world, types, storm, coastalDepth, rainfall) {
+  const inches = CELL_AREA * 0.0254 / GAL / 1e6; // million gallons in an inch over one cell
+  const b = storm.budget;
+  let flood = 0, surge = 0;
+  for (let i = 0; i < types.length; i++) {
+    if (types[i] === WATER) continue;
+    flood += storm.frac[i] * storm.depth[i];
+    if (world.cells.land[i] >= 0.5) surge += coastalDepth[i] * 12;
+  }
+  const surface = Math.max(0, b.rain - b.tanks - b.storage - b.soil - b.sewer);
+  flood = Math.min(flood, surface);
+  return {
+    rainfall,
+    total: b.rain * inches,
+    tanks: b.tanks * inches,
+    stored: b.storage * inches,
+    infiltrated: b.soil * inches,
+    sewers: b.sewer * inches,
+    flooding: flood * inches,
+    runoff: (surface - flood) * inches,
+    surge: surge * inches,
   };
 }
