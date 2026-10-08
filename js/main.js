@@ -11,6 +11,7 @@ import { createMap, paintCells, paintSome, setCursor } from './map.js';
 import { set3D } from './model3d.js';
 import { createLotPanel } from './lotpanel.js';
 import { cacheGet, cacheSet, cacheClear } from './store.js';
+import { initOnboarding } from './onboarding.js';
 import {
   $, renderPalette, renderScore, renderInspector, renderBorough, renderLegend, renderVisionList,
 } from './ui.js';
@@ -575,6 +576,7 @@ function app(world, map) {
   renderBorough(world);
   setTool('inspect');
   bindVision(vision);
+  initOnboarding({ world, map, getVision: () => vision });
 }
 
 $('#retry').addEventListener('click', start);
