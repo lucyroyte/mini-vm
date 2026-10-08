@@ -38,11 +38,16 @@ export const SCENARIO_PRESETS = {
 // people flush about 5 times a day at home (AWWA Residential End Uses of Water,
 // 2016). Only residents are counted, not workers.
 //
-// Rainwater capture: buildings taller than `floors` store the first `inches`
-// of rain on their roofs in tanks (NYC's stormwater rules size retention for
-// 1.5 in). A tank emptied between storms catches about 80% of a year's rain.
-// It covers existing buildings too unless `newOnly` is set; a vision's painted
-// high-rise cells count as new towers, with roofs on 40% of the cell.
+// Unified Stormwater Rule (NYC DEP, in force since February 2022): new
+// development that disturbs 20,000 sq ft or more, or adds 5,000 sq ft or more
+// of hard surface, must manage the first 1.5 in of rain on site, retention
+// (tanks, green roofs, soil) first. Each painted cell (2,500 m², about
+// 27,000 sq ft) counts as one site, so every painted building, parking lot,
+// port or plaza is covered, holding the rule's depth of rain from its hard
+// surface. The rule leaves existing buildings alone; `retrofit` asks what if
+// buildings over 20 floors ('towers') or all buildings ('all') did it too.
+// Tower roofs are PLUTO floor area over floors. A site that holds 1.5 in per
+// storm, emptied between storms, keeps about 80% of a year's rain out of the sewers.
 export const POLICY = {
   toiletGpfToday: 2.2,
   flushesPerDay: 5,
@@ -50,18 +55,21 @@ export const POLICY = {
   sanitaryPeak: 1.5, // daytime sewage flow over the daily average, when a storm hits
   annualRainIn: 46.2, // NYC's normal year, Central Park
   annualCapture: 0.8,
-  newTowerRoof: 0.4,
 };
 export const NO_POLICIES = {
   toilets: { on: false, gpf: 1.28 },
-  rainCapture: { on: false, floors: 20, inches: 1.5, newOnly: false },
+  stormwaterRule: { on: false, inches: 1.5, retrofit: 'none' },
 };
 export const POLICY_OPTIONS = {
   gpf: [{ value: 1.28, label: '1.28 gal (WaterSense)' }, { value: 0.8, label: '0.8 gal (ultra-low)' }],
-  floors: TOWER_FLOORS.map((f) => ({ value: f, label: `Over ${f} floors` })),
-  inches: [1, 1.5, 2, 3].map((v) => ({ value: v, label: `First ${v} in of rain` })),
+  inches: [1, 1.5, 2, 3].map((v) => ({ value: v, label: `First ${v} in of rain${v === 1.5 ? ' (the rule)' : ''}` })),
+  retrofit: [
+    { value: 'none', label: 'New construction only (the rule)' },
+    { value: 'towers', label: `Also retrofit buildings over ${TOWER_FLOORS} floors` },
+    { value: 'all', label: 'Also retrofit every building' },
+  ],
 };
-const HIGH_RISE = new Set(ECOSYSTEMS.flatMap((t, i) => (t.size === 'high' ? [i] : [])));
+const COVERED = new Set(ECOSYSTEMS.flatMap((t, i) => (t.category === 'built' || ['parking', 'port', 'plaza'].includes(t.id) ? [i] : [])));
 const GAL = 0.00378541; // m³
 const inPerHr = (galPerDay, peak = 1) => (galPerDay * peak * GAL) / 24 / CELL_AREA / 0.0254; // over one cell
 
@@ -71,16 +79,18 @@ function sewage(residents, policies) {
   return Float32Array.from(residents, (p) => p * (POLICY.indoorGpcd - saved));
 }
 
-// Roof area (m²) whose rain is captured in each cell.
-function capturedRoof(world, types, policies) {
+// Hard surface (m²) in each cell whose first inches of rain are held on site.
+function retainedArea(world, types, policies) {
   const out = new Float32Array(world.cells.count);
-  const p = policies.rainCapture;
+  const p = policies.stormwaterRule;
   if (!p.on) return out;
   const { existing } = world.cells;
-  const roof = world.cells.towerRoof[Math.max(0, TOWER_FLOORS.indexOf(p.floors))];
+  const { towerRoof } = world.cells;
   for (let i = 0; i < out.length; i++) {
-    if (types[i] !== existing[i]) out[i] = HIGH_RISE.has(types[i]) ? POLICY.newTowerRoof * CELL_AREA : 0;
-    else if (!p.newOnly) out[i] = Math.min(CELL_AREA, roof[i]);
+    const built = ECOSYSTEMS[types[i]].category === 'built';
+    if (types[i] !== existing[i]) out[i] = COVERED.has(types[i]) ? ECOSYSTEMS[types[i]].imperviousness * CELL_AREA : 0;
+    else if (p.retrofit === 'all' && built) out[i] = surface(world, types, i).imperviousness * CELL_AREA;
+    else if (p.retrofit === 'towers' && built) out[i] = Math.min(CELL_AREA, towerRoof[i]);
   }
   return out;
 }
@@ -194,10 +204,10 @@ function surface(world, types, i) {
 // Rain the ground, plants and sewers can't take, routed downhill: for each
 // cell, the inches of excess runoff (over one cell's area) that reach it.
 // Sewage takes up part of the sewers' capacity (most of Brooklyn has combined
-// sewers), and roof tanks hold rain where a policy captures it.
+// sewers), and sites under the stormwater rule hold their first inches.
 // Also returns where the storm's rain goes, in inches over one cell summed over
 // cells: the water reaching each cell (its rain plus what runs onto it) fills
-// roof tanks, then on-site storage, then soaks in, then goes down the sewers,
+// on-site retention, then storage, then soaks in, then goes down the sewers,
 // and the rest runs on downhill.
 function runoff(world, types, rainfall, sanitary, roof, tankInches) {
   const { down, order } = world.model;
@@ -252,8 +262,8 @@ function stormwater(world, types, rainfall, policies, sanitary, roof) {
     const none = new Float32Array(count);
     Object.assign(cache, { rainfall, ...runoff(world, existing, rainfall, sewage(world.cells.residents, NO_POLICIES), none, 0) });
   }
-  const unchanged = types === existing && !policies.toilets.on && !policies.rainCapture.on;
-  const routed = unchanged ? cache : runoff(world, types, rainfall, sanitary, roof, policies.rainCapture.inches);
+  const unchanged = types === existing && !policies.toilets.on && !policies.stormwaterRule.on;
+  const routed = unchanged ? cache : runoff(world, types, rainfall, sanitary, roof, policies.stormwaterRule.inches);
   const vision = routed.flow;
 
   // Interpolate between the mapped storms.
@@ -450,7 +460,7 @@ export function runModels(world, types, scenario, policies = NO_POLICIES) {
   const N = cells.count;
   const residentsMap = residents(world, types);
   const sanitary = sewage(residentsMap, policies);
-  const roof = capturedRoof(world, types, policies);
+  const roof = retainedArea(world, types, policies);
   const coastalDepth = coastal(world, types, scenario.seaLevelRise);
   const storm = stormwater(world, types, scenario.rainfall, policies, sanitary, roof);
   const heatMap = surfaceTemperature(world, types, heat(world, types));
@@ -517,31 +527,27 @@ export function runModels(world, types, scenario, policies = NO_POLICIES) {
 
 // Water: what residents draw and send to the treatment plants each day, and the
 // rain kept out of the sewers by roof tanks, per storm and per year. In million gallons.
-function waterUse(world, types, residentsMap, sanitary, roof, policies, rainfall) {
-  let people = 0, sewer = 0, roofM2 = 0, newTowers = 0;
+function waterUse(world, types, residentsMap, sanitary, retained, policies, rainfall) {
+  let people = 0, sewer = 0, area = 0;
   for (let i = 0; i < residentsMap.length; i++) {
     people += residentsMap[i];
     sewer += sanitary[i];
-    roofM2 += roof[i];
-    if (roof[i] && types[i] !== world.cells.existing[i]) newTowers++;
+    area += retained[i];
   }
   const toilets = policies.toilets.on ? policies.toilets.gpf : POLICY.toiletGpfToday;
-  const rc = policies.rainCapture;
   const m3ToMg = 1 / GAL / 1e6;
-  const tank = Math.min(rc.inches, rainfall) * 0.0254; // a one-hour storm fills tanks no deeper than the rain
+  const held = Math.min(policies.stormwaterRule.inches, rainfall) * 0.0254; // a one-hour storm fills them no deeper than the rain
   return {
     toiletMgd: (people * POLICY.flushesPerDay * toilets) / 1e6,
     sewageMgd: sewer / 1e6,
-    roofHa: roofM2 / 1e4,
-    towers: rc.on ? (rc.newOnly ? 0 : world.borough.towers?.[Math.max(0, TOWER_FLOORS.indexOf(rc.floors))] ?? 0) : 0,
-    newTowerCells: newTowers,
-    stormMg: roofM2 * tank * m3ToMg,
-    yearMg: roofM2 * POLICY.annualRainIn * 0.0254 * POLICY.annualCapture * m3ToMg,
+    retainedHa: area / 1e4,
+    stormMg: area * held * m3ToMg,
+    yearMg: area * POLICY.annualRainIn * 0.0254 * POLICY.annualCapture * m3ToMg,
   };
 }
 
 // Where the storm's rain goes, in million gallons. The routing above splits the
-// rain into roof tanks, storage, soil, sewers and runoff. Of the runoff, the
+// rain into on-site retention, storage, soil, sewers and runoff. Of the runoff, the
 // water standing in the mapped flooded areas is counted as flooding (the flooded
 // share of each cell times its depth), and the rest as running off to the
 // harbor, creeks and canals. Seawater the coastal storm pushes onto land is

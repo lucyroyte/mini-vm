@@ -236,7 +236,7 @@ function gallons(mg, sign = false) {
 
 // Where a storm's rain goes, in gallons. Colors key the stacked bar.
 const RAIN = [
-  { key: 'tanks', name: 'Held in rooftop tanks', color: '#5b8fd0', better: 1 },
+  { key: 'tanks', name: 'Held on site (stormwater rule)', color: '#5b8fd0', better: 1 },
   { key: 'stored', name: 'Held by soil, plants and ponds', color: '#2f9e6b', better: 1 },
   { key: 'infiltrated', name: 'Soaked into the ground', color: '#a0784c', better: 1 },
   { key: 'sewers', name: 'Carried by sewers', color: '#8a96a3', better: -1 },
@@ -271,8 +271,8 @@ const PEOPLE = [
 const WATER_ROWS = [
   { name: 'Toilet flushing at home', value: (r) => r.water.toiletMgd, digits: 1, unit: ' MGD', lowerIsBetter: true },
   { name: 'Sewage from homes', value: (r) => r.water.sewageMgd, digits: 1, unit: ' MGD', lowerIsBetter: true },
-  { name: 'Roofs capturing rain', value: (r) => r.water.roofHa, digits: 1, unit: ' ha' },
-  { name: 'Rain held in tanks, this storm', value: (r) => r.water.stormMg, digits: 1, unit: ' Mgal' },
+  { name: 'Hard surface holding rain', value: (r) => r.water.retainedHa, digits: 1, unit: ' ha' },
+  { name: 'Rain held on site, this storm', value: (r) => r.water.stormMg, digits: 1, unit: ' Mgal' },
   { name: '…in a normal year', value: (r) => r.water.yearMg, digits: 0, unit: ' Mgal' },
   { name: 'Stormwater flooding', value: (r) => r.metrics.flooding.stormHa, digits: 1, unit: ' ha', lowerIsBetter: true },
 ];
@@ -342,7 +342,7 @@ export function renderInspector(world, vision, results, i) {
     ['Heat vulnerability', c.hvi[i] ? `${fmt(c.hvi[i], 1)} / 5 (ZIP code)` : 'Unknown'],
     ['Habitat', `${fmt(p.habitat[i], 1)} / 10`],
   ];
-  if (p.roof[i]) rows.push(['Rain capture', `${fmt(p.roof[i], -1)} m² of tower roof with rain tanks`]);
+  if (p.roof[i]) rows.push(['Rain capture', `${fmt(p.roof[i], -1)} m² of hard surface holding rain on site`]);
   $('#cell-info').innerHTML = rows.map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`).join('');
 }
 

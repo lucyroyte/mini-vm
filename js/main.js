@@ -14,7 +14,7 @@ import {
   $, renderPalette, renderScore, renderInspector, renderBorough, renderLegend, renderVisionList,
 } from './ui.js';
 
-const CACHE_KEY = 'world-v7';
+const CACHE_KEY = 'world-v8';
 const CACHE_DAYS = 30;
 
 // Loading ------------------------------------------------------------------------
@@ -472,35 +472,34 @@ function app(world, map) {
   // Policies ------------------------------------------------------------------
   const options = (el, list) => { el.innerHTML = list.map((o) => `<option value="${o.value}">${o.label}</option>`).join(''); };
   options($('#policy-gpf'), POLICY_OPTIONS.gpf);
-  options($('#policy-floors'), POLICY_OPTIONS.floors);
   options($('#policy-inches'), POLICY_OPTIONS.inches);
+  options($('#policy-retrofit'), POLICY_OPTIONS.retrofit);
   const renderPolicies = () => {
-    const { toilets, rainCapture } = vision.policies;
+    const { toilets, stormwaterRule } = vision.policies;
     $('#policy-toilets').checked = toilets.on;
     $('#policy-gpf').value = toilets.gpf;
     $('#policy-gpf').disabled = !toilets.on;
-    $('#policy-rain').checked = rainCapture.on;
-    $('#policy-floors').value = rainCapture.floors;
-    $('#policy-inches').value = rainCapture.inches;
-    $('#policy-new-only').checked = rainCapture.newOnly;
-    for (const id of ['#policy-floors', '#policy-inches', '#policy-new-only']) $(id).disabled = !rainCapture.on;
+    $('#policy-swr').checked = stormwaterRule.on;
+    $('#policy-inches').value = stormwaterRule.inches;
+    $('#policy-retrofit').value = stormwaterRule.retrofit;
+    for (const id of ['#policy-inches', '#policy-retrofit']) $(id).disabled = !stormwaterRule.on;
   };
   const policyInputs = {
     '#policy-toilets': (p, el) => { p.toilets.on = el.checked; },
     '#policy-gpf': (p, el) => { p.toilets.gpf = +el.value; },
-    '#policy-rain': (p, el) => { p.rainCapture.on = el.checked; },
-    '#policy-floors': (p, el) => { p.rainCapture.floors = +el.value; },
-    '#policy-inches': (p, el) => { p.rainCapture.inches = +el.value; },
-    '#policy-new-only': (p, el) => { p.rainCapture.newOnly = el.checked; },
+    '#policy-swr': (p, el) => { p.stormwaterRule.on = el.checked; },
+    '#policy-inches': (p, el) => { p.stormwaterRule.inches = +el.value; },
+    '#policy-retrofit': (p, el) => { p.stormwaterRule.retrofit = el.value; },
   };
   for (const [id, set] of Object.entries(policyInputs)) {
     $(id).addEventListener('change', (e) => { set(vision.policies, e.target); renderPolicies(); recompute(true); });
   }
   $('#policy-notes').textContent = `Low-flow toilets: Brooklyn's toilets are taken to average ${POLICY.toiletGpfToday} gallons a flush today, `
     + `and residents flush ${POLICY.flushesPerDay} times a day at home; workers and visitors aren't counted. Less sewage leaves a little more room `
-    + 'in the combined sewers for rain. Rainwater capture: tanks on each tower hold the first inches of rain from its roof (roof area is PLUTO floor area over floors), '
-    + `and catch about ${Math.round(100 * POLICY.annualCapture)}% of a ${POLICY.annualRainIn} in year. It covers today's towers too, as retrofits, `
-    + `unless set to new construction only. Painted high-rise cells count as new towers with roofs on ${Math.round(100 * POLICY.newTowerRoof)}% of the cell.`;
+    + 'in the combined sewers for rain. Unified Stormwater Rule: new development that disturbs 20,000 sq ft or adds 5,000 sq ft of hard surface '
+    + 'must hold the first 1.5 in of rain on site. Each painted cell counts as one site, so every painted building, parking lot, port or plaza holds '
+    + `that rain from its hard surface, which keeps about ${Math.round(100 * POLICY.annualCapture)}% of a ${POLICY.annualRainIn} in year out of the sewers. `
+    + 'The rule leaves existing buildings alone; the retrofit options ask what if they did it too.';
 
   // Visions -------------------------------------------------------------------
   const renderVisions = () => renderVisionList(savedVisions(), vision.created, {
