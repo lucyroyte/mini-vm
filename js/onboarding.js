@@ -139,7 +139,12 @@ export function initOnboarding({ world, map, getVision }) {
     {
       target: '#tools',
       title: 'Painting tools',
-      text: '<b>Inspect</b> pans and shows a cell\'s details. <b>Brush</b>, <b>Rectangle</b>, <b>Lot</b> and <b>Fill</b> repaint cells with the chosen type. <b>Restore</b> paints cells back to how they are today. <b>My lot</b> opens one tax lot so you can try a green roof, rain tank, cool roof and more on it.',
+      text: '<b>Inspect</b> pans and shows a cell\'s details. <b>Brush</b>, <b>Rectangle</b>, <b>Lot</b> and <b>Fill</b> repaint cells with the chosen type. <b>Restore</b> paints cells back to how they are today.',
+    },
+    {
+      target: '[data-tool="mylot"]',
+      title: 'My lot',
+      text: '<b>My lot</b> works on one property at a time. Click any tax lot to open its panel and try a green roof, cool roof, solar panels, a rain tank, a rain garden, trees or low-flow toilets. It shows what that lot would hold back in a storm and over a year, how much cooler its roof would run, and the energy, carbon and water it would save. Lot changes stay on the lot and don\'t change the borough score.',
     },
     {
       target: '.score-card',
@@ -179,6 +184,14 @@ export function initOnboarding({ world, map, getVision }) {
       target: '.people-card',
       title: 'People',
       text: 'How many residents live where it floods or overheats, from the 2020 Census. This isn\'t part of the score, but it shows who a change helps.',
+    },
+    {
+      target: '.emissions-card',
+      title: 'Carbon emitted and taken up',
+      text: 'The carbon bar above counts what soil and plants store. This panel adds what Brooklyn emits each year from buildings and from cars and trucks, minus what plants take up. Like People, it sits beside the score rather than in it. Press <b>Show me</b> to map building emissions.',
+      demo: async () => { setDisplay('emissions'); await nextFrame(); },
+      demoLabel: 'Show me',
+      after: () => 'Darker cells emit more each year, mostly dense housing, offices and industry. The tour switches the map back when it ends.',
     },
     {
       target: '#display',
