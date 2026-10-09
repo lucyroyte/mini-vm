@@ -161,6 +161,12 @@ h3 { margin: 0 0 8px; font-size: 14px; }
 .bar .mark { position: absolute; top: -3px; bottom: -3px; width: 2px; background: var(--text); }
 .metric-detail { font-size: 12px; color: var(--muted); }
 .metric-detail span { font-weight: 600; }
+#people, #emissions { width: 100%; border-collapse: collapse; font-size: 13px; }
+#people th, #emissions th { text-align: left; font-weight: normal; color: var(--muted); padding: 2px 0; }
+#people td, #emissions td { text-align: right; font-variant-numeric: tabular-nums; padding: 2px 0; }
+#people span, #emissions span { font-weight: 600; margin-left: 4px; }
+#emissions tr.total th, #emissions tr.total td { color: inherit; font-weight: 600; border-top: 1px solid var(--line); padding-top: 4px; }
+#emissions tr.stored th, #emissions tr.stored td { padding-top: 8px; }
 #people, #water, #rain { width: 100%; border-collapse: collapse; font-size: 13px; }
 #people th, #water th, #rain th { text-align: left; font-weight: normal; color: var(--muted); padding: 2px 0; }
 #people td, #water td, #rain td { text-align: right; font-variant-numeric: tabular-nums; padding: 2px 0;  white-space: nowrap; }

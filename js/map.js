@@ -156,6 +156,7 @@ export const SCALES = {
   flood: { label: 'Flood depth', unit: 'ft', stops: [[0, '#f2f2f2'], [0.33, '#c6dbef'], [1, '#6baed6'], [3, '#2171b5'], [8, '#08306b']] },
   heat: { label: 'Summer surface temperature', unit: '°F', stops: [[85, '#2c7bb6'], [95, '#ffffbf'], [101, '#fdae61'], [108, '#d7191c']] },
   residents: { label: 'Residents per hectare', unit: '/ha', stops: [[0, '#f7f4ea'], [50, '#fdd49e'], [200, '#fc8d59'], [500, '#d7301f'], [1000, '#7f0000']] },
+  emissions: { label: 'Building emissions, t CO2e per hectare a year', unit: 't/ha', stops: [[0, '#f7f4ea'], [100, '#fee391'], [500, '#fe9929'], [2000, '#cc4c02'], [6000, '#662506']] },
   habitat: { label: 'Habitat value', unit: '/10', stops: [[0, '#f7f4ea'], [3, '#c2e699'], [6, '#41ab5d'], [10, '#00441b']] },
   elevation: { label: 'Elevation', unit: 'ft', stops: [[-5, '#2b5d8a'], [0, '#a6d1e6'], [10, '#f1eebd'], [40, '#c9a46b'], [150, '#7a4b2a']] },
   cover: {
@@ -192,6 +193,7 @@ export function paintCells(map, world, mode, vision, results) {
       case 'heat': return ramp(SCALES.heat.stops, results.perCell.heat[i]);
       case 'habitat': return ramp(SCALES.habitat.stops, results.perCell.habitat[i]);
       case 'residents': return ramp(SCALES.residents.stops, results.perCell.residents[i] / HA_PER_CELL);
+      case 'emissions': return ramp(SCALES.emissions.stops, results.perCell.buildingEmissions[i] / HA_PER_CELL);
       case 'elevation': return ramp(SCALES.elevation.stops, world.cells.elevation[i]);
       case 'cover': return ECOSYSTEMS[existing[i]].id === 'water' ? '#dfe9f2' : coverColor(world.cells, i);
       default: return ECOSYSTEMS[vision.current[i]].color;
