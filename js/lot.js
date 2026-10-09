@@ -4,24 +4,21 @@
 // applied to the lot's own roof, paving and planting in square feet.
 
 import { typeById } from './ecosystems.js';
-import { HEAT, POLICY, SOIL_INFILTRATION } from './models.js';
+import { HEAT, POLICY, ROOFS, SOIL_INFILTRATION, annualCapture } from './models.js';
+
+export { annualCapture };
 
 export const GAL_PER_SQFT_IN = 0.6234; // gallons in an inch of rain over a square foot
 
 export const LOT = {
-  greenRoofIn: 0.75, // inches a 3–4 in extensive (sedum) green roof soaks up in a storm
+  greenRoofIn: ROOFS.greenRoofIn,
   rainGardenIn: 6, // inches of ponding in a rain garden, on top of what soaks in
   treeCrownSqft: 490, // a young street or yard tree's crown at maturity, 25 ft across
   treeCo2Tonnes: 0.022, // CO₂ a mature tree takes up a year (about 48 lb)
-  solarWPerSqft: 18, // modern panels, about 19% efficient
-  solarKwhPerKw: 1200, // a year's output per kW of panels in New York City
-  gridCo2PerKwh: 0.000288962, // tonnes CO₂ per kWh of NYC grid power (Local Law 97)
-  roof: {
-    dark: { albedo: 0.15, kc: 0 }, // tar, asphalt or modified bitumen
-    cool: { albedo: 0.65, kc: 0 }, // white coating, aged (NYC CoolRoofs)
-    green: { albedo: 0.2, kc: 0.7 },
-    solar: { albedo: 0.15, kc: 0 }, // counted as no change in heat
-  },
+  solarWPerSqft: ROOFS.solarWPerSqft,
+  solarKwhPerKw: ROOFS.solarKwhPerKw,
+  gridCo2PerKwh: ROOFS.gridCo2PerKwh,
+  roof: ROOFS.surface,
   paved: { albedo: 0.1, kc: 0.03 },
 };
 
@@ -40,12 +37,6 @@ export const TANK_SIZES = [
   { value: 1000, label: 'Cistern (1,000 gal)' },
   { value: 5000, label: 'Large cistern (5,000 gal)' },
 ];
-
-// Share of a year's rain a place keeps out of the sewers when it can hold
-// `inches` of each storm and empties between storms. Calibrated so 1.5 in
-// keeps the Unified Stormwater Rule's 80% (most storms are small).
-const CAPTURE_K = 1.5 / -Math.log(1 - POLICY.annualCapture);
-export const annualCapture = (inches) => (inches > 0 ? 1 - Math.exp(-inches / CAPTURE_K) : 0);
 
 // The lot as it is: its area, roof, and the paved and planted ground around the
 // roof. The roof is the larger of its building footprints and PLUTO's floor

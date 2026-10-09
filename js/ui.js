@@ -253,6 +253,7 @@ const RAIN = [
 // CO2e; shown in thousands, since Brooklyn emits millions a year.
 const EMISSIONS = [
   { name: 'Buildings (energy use)', value: (e) => e.buildings },
+  { name: 'Solar panels', value: (e) => -(e.solar ?? 0) },
   { name: 'Cars and trucks', value: (e) => e.vehicles },
   { name: 'Taken up by plants and soil', value: (e) => -e.uptake },
   { name: 'Net emitted a year', value: (e) => e.net, cls: 'total' },
@@ -307,6 +308,10 @@ const WATER_ROWS = [
   { name: 'Hard surface holding rain', value: (r) => r.water.retainedHa, digits: 1, unit: ' ha' },
   { name: 'Rain held on site, this storm', value: (r) => r.water.stormMg, digits: 1, unit: ' Mgal' },
   { name: '…in a normal year', value: (r) => r.water.yearMg, digits: 0, unit: ' Mgal' },
+  { name: 'Green roofs', value: (r) => r.water.greenRoofHa, digits: 1, unit: ' ha' },
+  { name: 'Cool (white) roofs', value: (r) => r.water.coolRoofHa, digits: 1, unit: ' ha' },
+  { name: 'Solar panels', value: (r) => r.water.solarMw, digits: 0, unit: ' MW' },
+  { name: 'Summer surface, land average', value: (r) => r.metrics.heat.meanTemp, digits: 2, unit: ' °F', lowerIsBetter: true },
   { name: 'Stormwater flooding', value: (r) => r.metrics.flooding.stormHa, digits: 1, unit: ' ha', lowerIsBetter: true },
 ];
 
@@ -379,7 +384,9 @@ export function renderInspector(world, vision, results, i) {
       + (vision.current[i] !== c.existing[i] ? ' <em>(type average)</em>' : c.measuredEmissions?.[i] >= 0.5 * c.emissions?.[i] && c.emissions[i] > 0 ? ' <em>(mostly reported, LL84)</em>' : c.emissions?.[i] > 0 ? ' <em>(estimated from floor area)</em>' : '')],
     ['Carbon uptake', `${fmt(p.uptake[i], 2)} t CO2e a year`],
   ];
-  if (p.roof[i]) rows.push(['Rain capture', `${fmt(p.roof[i], -1)} m² of hard surface holding rain on site`]);
+  if (p.retained[i]) rows.push(['Rain capture', `${fmt(p.retained[i], -1)} m² of hard surface holding rain on site`]);
+  const roofs = [['green roof', p.roof.green[i]], ['solar panels', p.roof.solar[i]], ['cool (white) roof', p.roof.cool[i]]].filter(([, a]) => a > 0);
+  if (roofs.length) rows.push(['Roofs', roofs.map(([k, a]) => `${fmt(a, -1)} m² ${k}`).join(', ')]);
   $('#cell-info').innerHTML = rows.map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`).join('');
 }
 

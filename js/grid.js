@@ -119,6 +119,7 @@ export function buildGrid({ boundary, otherBoroughs = [], parks = [], hydrograph
   const hviSum = new Float32Array(all), hviArea = new Float32Array(all);
   // Roof area of towers, and how many there are.
   const towerRoof = new Float32Array(all);
+  const roofArea = new Float32Array(all); // every building's roof
   let towers = 0;
   const lotResidents = census ? censusToLots(lots, census) : null;
   const { lotEmissions, lotMeasured, intensity } = buildingEmissions(lots, benchmarks);
@@ -146,6 +147,7 @@ export function buildGrid({ boundary, otherBoroughs = [], parks = [], hydrograph
       emissions[cell] += lotEmissions[n] / spread;
       if (lotMeasured[n]) measuredEmissions[cell] += lotEmissions[n] / spread;
       if (tower) towerRoof[cell] += roof / spread;
+      roofArea[cell] += roof / spread;
       if (v) { hviSum[cell] += (v * area) / spread; hviArea[cell] += area / spread; }
       if (g < 0) continue;
       const k = cell * GROUPS.length + g;
@@ -215,6 +217,7 @@ export function buildGrid({ boundary, otherBoroughs = [], parks = [], hydrograph
     hvi: new Float32Array(N), // Heat Vulnerability Index of the ZIP code, 1–5 (0 = unknown)
     canopy: new Float32Array(N), // share of the cell shaded by street trees
     towerRoof: new Float32Array(N), // m² of roof on buildings taller than TOWER_FLOORS
+    roof: new Float32Array(N), // m² of roof on every building, PLUTO floor area over floors
     surfaceTemp: new Float32Array(N).fill(NaN), // °F, summer surface temperature measured by Landsat
     // NYC's Stormwater Flood Maps: share of the cell flooded, and average depth
     // in inches where it is, for the moderate (2.13 in/hr) and extreme (3.66 in/hr) storms.
@@ -237,6 +240,7 @@ export function buildGrid({ boundary, otherBoroughs = [], parks = [], hydrograph
     cells.hvi[i] = hviArea[k] ? hviSum[k] / hviArea[k] : 0;
     cells.canopy[i] = Math.min(1, crown[k] / CELL_AREA);
     cells.towerRoof[i] = towerRoof[k];
+    cells.roof[i] = Math.min(CELL_AREA, roofArea[k]);
     if (cover && cover.n[k]) {
       cells.tree[i] = cover.tree[k] / cover.n[k];
       cells.grass[i] = cover.grass[k] / cover.n[k];

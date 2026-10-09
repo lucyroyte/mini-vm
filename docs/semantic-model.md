@@ -63,6 +63,8 @@ Describe each entity with the following parameters:
 - Policy
     - low-flow toilets: on/off, gallons per flush required
     - Unified Stormwater Rule: on/off, inches of rain each new site holds, whether existing towers or all buildings are retrofitted too
+    - cool (white) roofs: on/off, every roof or new construction only
+    - green or solar roofs: on/off, green, solar or half of each, share of each roof covered, every roof or new construction only
 - Climate scenario
     - rainfall intensity (inches per hour)
     - sea level rise
