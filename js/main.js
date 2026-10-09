@@ -5,7 +5,7 @@ import { loadSurfaceTemperature, loadStormwaterMaps, SURFACE_TEMP_SOURCE, STORMW
 import { loadLandCover, LANDCOVER_SOURCE } from './landcover.js';
 import { buildGrid, cellAt, cellBoundary, cellsInPolygon, CELL, HA_PER_CELL } from './grid.js';
 import { bboxOf, containsPoint, polygonsOf } from './geo.js';
-import { prepare, runModels, SCENARIO_PRESETS, POLICY, POLICY_OPTIONS } from './models.js';
+import { prepare, runModels, SCENARIO_PRESETS, POLICY, POLICY_OPTIONS, ROOFS } from './models.js';
 import { Vision, savedVisions, saveVision, deleteVision } from './vision.js';
 import { createMap, paintCells, paintSome, setCursor } from './map.js';
 import { set3D } from './model3d.js';
@@ -16,7 +16,7 @@ import {
   $, renderPalette, renderScore, renderInspector, renderBorough, renderLegend, renderVisionList,
 } from './ui.js';
 
-const CACHE_KEY = 'world-v10';
+const CACHE_KEY = 'world-v11';
 const CACHE_DAYS = 30;
 
 // Loading ------------------------------------------------------------------------
@@ -497,6 +497,10 @@ function app(world, map) {
   options($('#policy-gpf'), POLICY_OPTIONS.gpf);
   options($('#policy-inches'), POLICY_OPTIONS.inches);
   options($('#policy-retrofit'), POLICY_OPTIONS.retrofit);
+  options($('#policy-cool-scope'), POLICY_OPTIONS.scope);
+  options($('#policy-green-scope'), POLICY_OPTIONS.scope);
+  options($('#policy-green-mix'), POLICY_OPTIONS.mix);
+  options($('#policy-green-zone'), POLICY_OPTIONS.zone);
   const renderPolicies = () => {
     const { toilets, stormwaterRule } = vision.policies;
     $('#policy-toilets').checked = toilets.on;
@@ -506,6 +510,15 @@ function app(world, map) {
     $('#policy-inches').value = stormwaterRule.inches;
     $('#policy-retrofit').value = stormwaterRule.retrofit;
     for (const id of ['#policy-inches', '#policy-retrofit']) $(id).disabled = !stormwaterRule.on;
+    const { coolRoofs, greenRoofs } = vision.policies;
+    $('#policy-cool').checked = coolRoofs.on;
+    $('#policy-cool-scope').value = coolRoofs.scope;
+    $('#policy-cool-scope').disabled = !coolRoofs.on;
+    $('#policy-green').checked = greenRoofs.on;
+    $('#policy-green-mix').value = greenRoofs.mix;
+    $('#policy-green-zone').value = greenRoofs.zone;
+    $('#policy-green-scope').value = greenRoofs.scope;
+    for (const id of ['#policy-green-mix', '#policy-green-zone', '#policy-green-scope']) $(id).disabled = !greenRoofs.on;
   };
   const policyInputs = {
     '#policy-toilets': (p, el) => { p.toilets.on = el.checked; },
@@ -513,6 +526,12 @@ function app(world, map) {
     '#policy-swr': (p, el) => { p.stormwaterRule.on = el.checked; },
     '#policy-inches': (p, el) => { p.stormwaterRule.inches = +el.value; },
     '#policy-retrofit': (p, el) => { p.stormwaterRule.retrofit = el.value; },
+    '#policy-cool': (p, el) => { p.coolRoofs.on = el.checked; },
+    '#policy-cool-scope': (p, el) => { p.coolRoofs.scope = el.value; },
+    '#policy-green': (p, el) => { p.greenRoofs.on = el.checked; },
+    '#policy-green-mix': (p, el) => { p.greenRoofs.mix = el.value; },
+    '#policy-green-zone': (p, el) => { p.greenRoofs.zone = +el.value; },
+    '#policy-green-scope': (p, el) => { p.greenRoofs.scope = el.value; },
   };
   for (const [id, set] of Object.entries(policyInputs)) {
     $(id).addEventListener('change', (e) => { set(vision.policies, e.target); renderPolicies(); recompute(true); });
@@ -522,7 +541,14 @@ function app(world, map) {
     + 'in the combined sewers for rain. Unified Stormwater Rule: new development that disturbs 20,000 sq ft or adds 5,000 sq ft of hard surface '
     + 'must hold the first 1.5 in of rain on site. Each painted cell counts as one site, so every painted building, parking lot, port or plaza holds '
     + `that rain from its hard surface, which keeps about ${Math.round(100 * POLICY.annualCapture)}% of a ${POLICY.annualRainIn} in year out of the sewers. `
-    + 'The rule leaves existing buildings alone; the retrofit options ask what if they did it too.';
+    + 'The rule leaves existing buildings alone; the retrofit options ask what if they did it too. '
+    + 'Roofs: each cell\'s roof is its buildings\' PLUTO floor area over floors, and today\'s roofs are taken to be dark. Both roof laws apply '
+    + 'to new roofs and roof replacements, so "every roof" shows the long run, once every roof has been redone. '
+    + `A white roof reflects ${Math.round(100 * ROOFS.surface.cool.albedo)}% of sunlight instead of ${Math.round(100 * ROOFS.surface.dark.albedo)}%; `
+    + `a sedum green roof cools by evaporating water and soaks up the first ${ROOFS.greenRoofIn} in of a storm. `
+    + 'Green or solar roofs cover the share of each roof you pick (the law\'s "sustainable roofing zone", what setbacks and equipment leave), '
+    + `and the rest is white when cool roofs are on too. Solar: ${ROOFS.solarWPerSqft} W per sq ft making ${ROOFS.solarKwhPerKw.toLocaleString()} kWh per kW a year, `
+    + 'replacing grid power in the Emissions panel. These are the same rules My lot uses for one lot.';
 
   // Visions -------------------------------------------------------------------
   const renderVisions = () => renderVisionList(savedVisions(), vision.created, {

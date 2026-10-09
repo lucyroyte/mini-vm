@@ -64,9 +64,45 @@ export const POLICY = {
   annualRainIn: 46.2, // NYC's normal year, Central Park
   annualCapture: 0.8,
 };
+
+// Share of a year's rain a place keeps out of the sewers when it can hold
+// `inches` of each storm and empties between storms. Calibrated so 1.5 in
+// keeps the Unified Stormwater Rule's 80% (most storms are small).
+const CAPTURE_K = 1.5 / -Math.log(1 - POLICY.annualCapture);
+export const annualCapture = (inches) => (inches > 0 ? 1 - Math.exp(-inches / CAPTURE_K) : 0);
+
+// Roofs, shared by the roof policies and My lot. Today's roofs are taken to be
+// dark. Surfaces are albedo and evapotranspiration (× lawn), for the InVEST
+// cooling capacity; a green roof also soaks up the first inches of a storm.
+export const ROOFS = {
+  surface: {
+    dark: { albedo: 0.15, kc: 0 }, // tar, asphalt or modified bitumen
+    cool: { albedo: 0.65, kc: 0 }, // white coating, aged (NYC CoolRoofs)
+    green: { albedo: 0.2, kc: 0.7 },
+    solar: { albedo: 0.15, kc: 0 }, // counted as no change in heat
+  },
+  greenRoofIn: 0.75, // inches a 3–4 in extensive (sedum) green roof soaks up in a storm
+  solarWPerSqft: 18, // modern panels, about 19% efficient
+  solarKwhPerKw: 1200, // a year's output per kW of panels in New York City
+  gridCo2PerKwh: 0.000288962, // tonnes CO₂ per kWh of NYC grid power (Local Law 97)
+};
+const SQFT_PER_M2 = 10.7639;
+// Change in a roof's cooling capacity (0.2 albedo + 0.2 evapotranspiration) from dark.
+const roofGain = (k) => 0.2 * (ROOFS.surface[k].albedo - ROOFS.surface.dark.albedo) + 0.2 * (ROOFS.surface[k].kc - ROOFS.surface.dark.kc);
+
+// Roof policies. Cool roofs (Local Law 21 of 2011, in the building code):
+// new roofs and roof replacements must be white or reflective. Green or solar
+// roofs (Local Laws 92 and 94 of 2019): new buildings and full roof
+// replacements must cover the roof's "sustainable roofing zone" (what is left
+// after setbacks, equipment and access) with plants, solar panels, or both.
+// Both apply as roofs are replaced, so `scope: 'all'` is the long run, when
+// every roof has been redone; 'new' is buildings painted in the vision only.
+// Where both are on, the rest of each roof outside the green/solar zone is cool.
 export const NO_POLICIES = {
   toilets: { on: false, gpf: 1.28 },
   stormwaterRule: { on: false, inches: 1.5, retrofit: 'none' },
+  coolRoofs: { on: false, scope: 'all' },
+  greenRoofs: { on: false, mix: 'green', zone: 0.5, scope: 'all' },
 };
 export const POLICY_OPTIONS = {
   gpf: [{ value: 1.28, label: '1.28 gal (WaterSense)' }, { value: 0.8, label: '0.8 gal (ultra-low)' }],
@@ -76,7 +112,45 @@ export const POLICY_OPTIONS = {
     { value: 'towers', label: `Also retrofit buildings over ${TOWER_FLOORS} floors` },
     { value: 'all', label: 'Also retrofit every building' },
   ],
+  scope: [
+    { value: 'all', label: 'Every roof, once replaced (the law)' },
+    { value: 'new', label: 'New construction only' },
+  ],
+  mix: [
+    { value: 'green', label: 'All green roof' },
+    { value: 'half', label: 'Half green, half solar' },
+    { value: 'solar', label: 'All solar panels' },
+  ],
+  zone: [0.25, 0.5, 0.75, 1].map((v) => ({ value: v, label: `On ${Math.round(100 * v)}% of each roof` })),
 };
+
+// Green, cool and solar roof area (m²) in each cell under the roof policies.
+// Unchanged cells use their buildings' roofs; painted buildings get today's
+// average roof share for their type.
+function roofs(world, types, policies) {
+  const N = world.cells.count;
+  const out = { green: new Float32Array(N), cool: new Float32Array(N), solar: new Float32Array(N) };
+  const { coolRoofs: c, greenRoofs: g } = policies;
+  if (!c.on && !g.on) return out;
+  const { existing, roof } = world.cells;
+  const { roofShare } = world.model;
+  const greenShare = g.on ? g.zone * (g.mix === 'green' ? 1 : g.mix === 'half' ? 0.5 : 0) : 0;
+  const solarShare = g.on ? g.zone - greenShare : 0;
+  for (let i = 0; i < N; i++) {
+    if (ECOSYSTEMS[types[i]].category !== 'built') continue;
+    const changed = types[i] !== existing[i];
+    const area = changed ? roofShare[types[i]] * CELL_AREA : roof[i];
+    if (!area) continue;
+    let rest = area;
+    if (g.on && (changed || g.scope === 'all')) {
+      out.green[i] = greenShare * area;
+      out.solar[i] = solarShare * area;
+      rest -= out.green[i] + out.solar[i];
+    }
+    if (c.on && (changed || c.scope === 'all')) out.cool[i] = rest;
+  }
+  return out;
+}
 const COVERED = new Set(ECOSYSTEMS.flatMap((t, i) => (t.category === 'built' || ['parking', 'port', 'plaza'].includes(t.id) ? [i] : [])));
 const GAL = 0.00378541; // m³
 const inPerHr = (galPerDay, peak = 1) => (galPerDay * peak * GAL) / 24 / CELL_AREA / 0.0254; // over one cell
@@ -85,6 +159,13 @@ const inPerHr = (galPerDay, peak = 1) => (galPerDay * peak * GAL) / 24 / CELL_AR
 function sewage(residents, policies) {
   const saved = policies.toilets.on ? Math.max(0, POLICY.toiletGpfToday - policies.toilets.gpf) * POLICY.flushesPerDay : 0;
   return Float32Array.from(residents, (p) => p * (POLICY.indoorGpcd - saved));
+}
+
+// Inches of rain over each cell held on site: by the Unified Stormwater Rule's
+// retention, and by green roofs.
+function heldOnSite(retained, roof, policies) {
+  const r = policies.stormwaterRule.inches;
+  return Float32Array.from(retained, (a, i) => (a * r + roof.green[i] * ROOFS.greenRoofIn) / CELL_AREA);
 }
 
 // Hard surface (m²) in each cell whose first inches of rain are held on site.
@@ -169,6 +250,10 @@ export function prepare(world) {
   const sum = new Float64Array(ECOSYSTEMS.length), n = new Float64Array(ECOSYSTEMS.length);
   for (let i = 0; i < N; i++) { sum[world.cells.existing[i]] += world.cells.residents[i]; n[world.cells.existing[i]]++; }
   world.model.density = Float32Array.from(sum, (v, t) => (n[t] && ECOSYSTEMS[t].category === 'built' ? v / n[t] : 0));
+  // Average share of a cell under roofs, for each building type today.
+  const roofSum = new Float64Array(ECOSYSTEMS.length);
+  for (let i = 0; i < N; i++) roofSum[world.cells.existing[i]] += world.cells.roof?.[i] ?? 0;
+  world.model.roofShare = Float32Array.from(roofSum, (v, t) => (n[t] && ECOSYSTEMS[t].category === 'built' ? v / n[t] / CELL_AREA : 0));
   // Average building emissions per cell of each built type today, likewise.
   const emit = new Float64Array(ECOSYSTEMS.length);
   for (let i = 0; i < N; i++) emit[world.cells.existing[i]] += world.cells.emissions?.[i] ?? 0;
@@ -221,7 +306,7 @@ function surface(world, types, i) {
 // cells: the water reaching each cell (its rain plus what runs onto it) fills
 // on-site retention, then storage, then soaks in, then goes down the sewers,
 // and the rest runs on downhill.
-function runoff(world, types, rainfall, sanitary, roof, tankInches) {
+function runoff(world, types, rainfall, sanitary, held) {
   const { down, order } = world.model;
   const { count } = world.cells;
   const spare = new Float32Array(count);
@@ -232,7 +317,7 @@ function runoff(world, types, rainfall, sanitary, roof, tankInches) {
     if (types[i] === WATER) { spare[i] = Infinity; continue; }
     const { imperviousness } = surface(world, types, i);
     const sewer = Math.max(0, SEWER_CAPACITY * imperviousness - inPerHr(sanitary[i], POLICY.sanitaryPeak)) * t.sewered;
-    const tanks = roof[i] ? (tankInches * roof[i]) / CELL_AREA : 0;
+    const tanks = held[i];
     const soil = (1 - imperviousness) * SOIL_INFILTRATION;
     fill.set([tanks, t.storage, soil, sewer], i * 4);
     const capacity = t.storage + tanks + soil + sewer;
@@ -267,15 +352,15 @@ const STORMS = [2.13, 3.66];
 const DRY_BELOW = 1.5; // in/hr
 const RUNOFF_FLOOR = 0.25; // inches of runoff, so tiny catchments don't swing wildly
 const MAX_STORM_DEPTH_IN = 36;
-function stormwater(world, types, rainfall, policies, sanitary, roof) {
+function stormwater(world, types, rainfall, policies, sanitary, held) {
   const { count, stormFrac, stormDepth, existing } = world.cells;
   const cache = world.model.runoffToday;
   if (cache.rainfall !== rainfall) {
     const none = new Float32Array(count);
-    Object.assign(cache, { rainfall, ...runoff(world, existing, rainfall, sewage(world.cells.residents, NO_POLICIES), none, 0) });
+    Object.assign(cache, { rainfall, ...runoff(world, existing, rainfall, sewage(world.cells.residents, NO_POLICIES), none) });
   }
-  const unchanged = types === existing && !policies.toilets.on && !policies.stormwaterRule.on;
-  const routed = unchanged ? cache : runoff(world, types, rainfall, sanitary, roof, policies.stormwaterRule.inches);
+  const unchanged = types === existing && !policies.toilets.on && held.every((v) => !v);
+  const routed = unchanged ? cache : runoff(world, types, rainfall, sanitary, held);
   const vision = routed.flow;
 
   // Interpolate between the mapped storms.
@@ -372,7 +457,7 @@ function boxBlur(src, out, cols, rows, r) {
   }
 }
 
-function heat(world, types) {
+function heat(world, types, roof = null) {
   const { count, canopy, col, row } = world.cells;
   const { cols, rows } = world.grid;
   const { park, parkSum, box, weight } = world.model.cooling;
@@ -383,6 +468,7 @@ function heat(world, types) {
     const measured = types[i] === world.cells.existing[i] && world.cells.tree?.[i] >= 0;
     cc[i] = measured ? 0.6 * world.cells.tree[i] + 0.2 * t.albedo + 0.2 * Math.min(1, world.cells.tree[i] + 0.8 * world.cells.grass[i])
       : coolingCapacity(t, canopy[i]);
+    if (roof) cc[i] += (roof.green[i] * roofGain('green') + roof.cool[i] * roofGain('cool')) / CELL_AREA;
     green[i] = surface(world, types, i).vegetation >= 0.5 ? 1 : 0;
   }
 
@@ -498,10 +584,12 @@ export function runModels(world, types, scenario, policies = NO_POLICIES) {
   const N = cells.count;
   const residentsMap = residents(world, types);
   const sanitary = sewage(residentsMap, policies);
-  const roof = retainedArea(world, types, policies);
+  const retained = retainedArea(world, types, policies);
+  const roof = roofs(world, types, policies);
+  const held = heldOnSite(retained, roof, policies);
   const coastalDepth = coastal(world, types, scenario.seaLevelRise);
-  const storm = stormwater(world, types, scenario.rainfall, policies, sanitary, roof);
-  const heatMap = surfaceTemperature(world, types, heat(world, types));
+  const storm = stormwater(world, types, scenario.rainfall, policies, sanitary, held);
+  const heatMap = surfaceTemperature(world, types, heat(world, types, roof));
   const hab = habitat(world, types);
   const buildingMap = buildingEmissions(world, types);
   const uptakeMap = sequestration(world, types);
@@ -538,7 +626,11 @@ export function runModels(world, types, scenario, policies = NO_POLICIES) {
   const diversity = [...natural.values()].filter((n) => n * ha >= MIN_HABITAT_HA).length;
 
   const vehicleTonnes = population * VEHICLE_T_PER_RESIDENT;
-  const emittedTonnes = buildingTonnes + vehicleTonnes;
+  let solarM2 = 0;
+  for (const a of roof.solar) solarM2 += a;
+  const solarKw = (solarM2 * SQFT_PER_M2 * ROOFS.solarWPerSqft) / 1000;
+  const solarTonnes = solarKw * ROOFS.solarKwhPerKw * ROOFS.gridCo2PerKwh;
+  const emittedTonnes = buildingTonnes - solarTonnes + vehicleTonnes;
   const metrics = {
     flooding: {
       // Homes, businesses and streets flooded. Residents are reported in
@@ -563,41 +655,50 @@ export function runModels(world, types, scenario, policies = NO_POLICIES) {
   };
   // Carbon emitted and taken up each year, t CO2e. Not part of the climate score.
   const emissions = {
-    buildings: buildingTonnes, vehicles: vehicleTonnes, emitted: emittedTonnes,
+    buildings: buildingTonnes, solar: solarTonnes, vehicles: vehicleTonnes, emitted: emittedTonnes,
     uptake, net: emittedTonnes - uptake, storedCO2e: carbon * CO2_PER_C,
   };
   // Who lives with the flooding and heat. Not part of the climate score.
   const people = { population, floodedPeople, hotPeople, hotVulnerable, peopleTemp: peopleHeat };
-  const water = waterUse(world, types, residentsMap, sanitary, roof, policies, scenario.rainfall);
+  const water = waterUse(world, types, residentsMap, sanitary, retained, roof, policies, scenario.rainfall, solarKw);
   const rain = rainBudget(world, types, storm, coastalDepth, scenario.rainfall, sanitary);
   const overall = (metrics.flooding.score + metrics.biodiversity.score + metrics.heat.score + metrics.carbon.score) / 4;
   return {
     overall, metrics, people, water, rain, emissions,
     perCell: {
-      roof, coastalDepth, stormDepth: storm.depth, stormFrac: storm.frac, heat: heatMap, habitat: hab.value, residents: residentsMap,
+      retained, roof, coastalDepth, stormDepth: storm.depth, stormFrac: storm.frac, heat: heatMap, habitat: hab.value, residents: residentsMap,
       buildingEmissions: buildingMap, uptake: uptakeMap,
     },
   };
 }
 
 // Water: what residents draw and send to the treatment plants each day, and the
-// rain kept out of the sewers by roof tanks, per storm and per year. In million gallons.
-function waterUse(world, types, residentsMap, sanitary, retained, policies, rainfall) {
-  let people = 0, sewer = 0, area = 0;
+// rain held on site (by the stormwater rule and green roofs), per storm and per
+// year. In million gallons. Also the roof areas the roof policies change.
+function waterUse(world, types, residentsMap, sanitary, retained, roof, policies, rainfall, solarKw) {
+  let people = 0, sewer = 0, area = 0, green = 0, cool = 0;
   for (let i = 0; i < residentsMap.length; i++) {
     people += residentsMap[i];
     sewer += sanitary[i];
     area += retained[i];
+    green += roof.green[i];
+    cool += roof.cool[i];
   }
   const toilets = policies.toilets.on ? policies.toilets.gpf : POLICY.toiletGpfToday;
   const m3ToMg = 1 / GAL / 1e6;
-  const held = Math.min(policies.stormwaterRule.inches, rainfall) * 0.0254; // a one-hour storm fills them no deeper than the rain
+  const r = policies.stormwaterRule.inches, g = ROOFS.greenRoofIn, Y = POLICY.annualRainIn;
+  // A one-hour storm fills them no deeper than the rain.
+  const stormIn = area * Math.min(r, rainfall) + green * Math.min(g, rainfall);
+  const yearIn = Y * (area * annualCapture(r) + green * annualCapture(g));
   return {
     toiletMgd: (people * POLICY.flushesPerDay * toilets) / 1e6,
     sewageMgd: sewer / 1e6,
     retainedHa: area / 1e4,
-    stormMg: area * held * m3ToMg,
-    yearMg: area * POLICY.annualRainIn * 0.0254 * POLICY.annualCapture * m3ToMg,
+    greenRoofHa: green / 1e4,
+    coolRoofHa: cool / 1e4,
+    solarMw: solarKw / 1000,
+    stormMg: stormIn * 0.0254 * m3ToMg,
+    yearMg: yearIn * 0.0254 * m3ToMg,
   };
 }
 
