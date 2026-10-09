@@ -307,3 +307,38 @@ export async function loadFloodNet() {
     }),
   };
 }
+
+// One tax lot's PLUTO record (address, building class, floors, units, lot and
+// floor area) and its building footprints, whose areas add up to its roof.
+export async function loadLotDetails(bbl, signal) {
+  const [plutoSet, footprintSet] = await Promise.all([resolve(LAYERS.landcover), resolve(LAYERS.buildings)]);
+  const id = String(Math.round(+bbl));
+  const [pluto, footprints] = await Promise.all([
+    getJSON(`${DOMAIN}/resource/${plutoSet.id}.json?${new URLSearchParams({
+      $select: 'address,bldgclass,landuse,numfloors,numbldgs,lotarea,bldgarea,unitsres,yearbuilt,bctcb2020',
+      $where: `bbl=${id}`,
+    })}`, signal),
+    getJSON(`${DOMAIN}/resource/${footprintSet.id}.json?${new URLSearchParams({
+      $select: 'shape_area,height_roof',
+      $where: `mappluto_bbl='${id}' OR base_bbl='${id}'`,
+      $limit: 500,
+    })}`, signal).catch(() => []),
+  ]);
+  const p = pluto[0] ?? {};
+  return {
+    bbl: id,
+    address: p.address ?? '',
+    bldgclass: p.bldgclass ?? '',
+    landuse: (p.landuse ?? '').padStart(2, '0'),
+    floors: +p.numfloors || 0,
+    buildings: +p.numbldgs || 0,
+    lotarea: +p.lotarea || 0,
+    bldgarea: +p.bldgarea || 0,
+    units: +p.unitsres || 0,
+    yearBuilt: +p.yearbuilt || 0,
+    block: p.bctcb2020 ?? '',
+    roofSqft: footprints.reduce((s, f) => s + (+f.shape_area || 0), 0),
+    heightFt: Math.max(0, ...footprints.map((f) => +f.height_roof || 0)),
+    source: `${DOMAIN}/d/${plutoSet.id}`,
+  };
+}

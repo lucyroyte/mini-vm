@@ -59,6 +59,10 @@ Describe each entity with the following parameters:
     - name
     - list of changed cells
     - date created
+    - policies it adopts (see Policy)
+- Policy
+    - low-flow toilets: on/off, gallons per flush required
+    - Unified Stormwater Rule: on/off, inches of rain each new site holds, whether existing towers or all buildings are retrofitted too
 - Climate scenario
     - rainfall intensity (inches per hour)
     - sea level rise

@@ -210,7 +210,7 @@ export function describeType(t) {
 const METRICS = [
   {
     key: 'flooding', name: 'Flooding',
-    detail: (m) => `${fmt(m.floodedHa)} ha flooded (${fmt(m.coastalHa)} coastal, ${fmt(m.stormHa)} stormwater); ${fmt(m.exposedHa)} ha of homes, businesses and streets at risk`,
+    detail: (m, r) => `${fmt(m.floodedHa)} ha flooded (${fmt(m.coastalHa)} coastal, ${fmt(m.stormHa)} stormwater); ${fmt(m.exposedHa)} ha of homes, businesses and streets at risk; ${gallons(r.rain.flooding)} of rain standing in the streets`,
     value: (m) => m.exposedHa, unit: 'ha at risk', lowerIsBetter: true,
   },
   {
@@ -230,13 +230,23 @@ const METRICS = [
   },
 ];
 
-// People living with the flooding and heat, shown beside the score but not in it.
-const PEOPLE = [
-  { name: 'Residents', value: (p) => p.population, digits: -2, unit: '', neutral: true },
-  { name: 'Residents flooded', value: (p) => p.floodedPeople, digits: -2, lowerIsBetter: true },
-  { name: 'Living in heat islands', value: (p) => p.hotPeople, digits: -2, lowerIsBetter: true },
-  { name: '…in heat-vulnerable ZIP codes', value: (p) => p.hotVulnerable, digits: -2, lowerIsBetter: true },
-  { name: 'Summer surface where people live', value: (p) => p.peopleTemp, digits: 1, unit: ' °F', lowerIsBetter: true },
+// Million gallons, in words that fit the size: 2.6 billion gal, 340 million gal, 52,000 gal.
+function gallons(mg, sign = false) {
+  const a = Math.abs(mg);
+  const text = a >= 1000 ? `${fmt(a / 1000, a >= 10000 ? 0 : 1)} billion gal`
+    : a >= 1 ? `${fmt(a, a >= 100 ? 0 : 1)} million gal`
+      : `${fmt(a * 1e6, -3)} gal`;
+  return sign ? (mg > 0 ? '+' : '−') + text : text;
+}
+
+// Where a storm's rain goes, in gallons. Colors key the stacked bar.
+const RAIN = [
+  { key: 'tanks', name: 'Held on site (stormwater rule)', color: '#5b8fd0', better: 1 },
+  { key: 'stored', name: 'Held by soil, plants and ponds', color: '#2f9e6b', better: 1 },
+  { key: 'infiltrated', name: 'Soaked into the ground', color: '#a0784c', better: 1 },
+  { key: 'sewers', name: 'Carried by sewers', color: '#8a96a3', better: -1 },
+  { key: 'flooding', name: 'Flooding streets and buildings', color: '#d1453b', better: -1 },
+  { key: 'runoff', name: 'Running off to waterways', color: '#e9a23b', better: -1 },
 ];
 
 // Carbon emitted and taken up each year, beside the carbon stored. Tonnes of
@@ -265,19 +275,56 @@ function renderEmissions(world, today, vision) {
     + ' New buildings in a vision get today\'s average for their type. Cars and trucks are 1.4 t a resident, so they follow where people live; the stored line is a total, not a yearly amount.';
 }
 
-function renderPeople(today, vision) {
-  $('#people').innerHTML = PEOPLE.map((spec) => {
-    const t = spec.value(today.people), v = spec.value(vision.people);
-    const step = spec.digits < 0 ? 10 ** -spec.digits / 2 : 0.05;
+function renderRain(today, vision) {
+  const t = today.rain, v = vision.rain;
+  $('#rain-note').textContent = `One hour of rain at ${fmt(v.rainfall, 2)} in/hr drops ${gallons(v.total)} on Brooklyn. Most sewers here are combined, so sewer water past the treatment plants' capacity overflows into the harbor.`;
+  const shown = RAIN.filter((r) => v[r.key] > 0 || t[r.key] > 0);
+  $('#rain-bar').innerHTML = shown.map((r) => `<div style="flex-basis:${(100 * v[r.key]) / (v.total || 1)}%;background:${r.color}" title="${r.name}"></div>`).join('');
+  $('#rain-bar').setAttribute('aria-label', shown.map((r) => `${r.name} ${pct(v[r.key] / (v.total || 1))}`).join(', '));
+  const row = (name, key, value, d, better, cls = '') => {
+    const change = Math.abs(d) < 0.0005 ? '' : ` <span class="${d * better > 0 ? 'good' : 'bad'}">${gallons(d, true)}</span>`;
+    return `<tr class="${cls}"><th scope="row">${key}${name}</th><td>${gallons(value)}${change}</td></tr>`;
+  };
+  $('#rain').innerHTML = shown.map((r) => row(r.name, `<span class="key" style="background:${r.color}"></span>`, v[r.key], v[r.key] - t[r.key], r.better)).join('')
+    + row('Stormwater: rain that runs off (sewers, flooding, waterways)', '', v.stormwater, v.stormwater - t.stormwater, -1, 'aside')
+    + row('Sewage in the same sewers this hour', '', v.sewage, v.sewage - t.sewage, -1)
+    + (v.surge || t.surge ? row('Seawater on land (coastal storm)', '', v.surge, v.surge - t.surge, -1) : '');
+}
+
+// People living with the flooding and heat, shown beside the score but not in it.
+const PEOPLE = [
+  { name: 'Residents', value: (r) => r.people.population, digits: -2, unit: '', neutral: true },
+  { name: 'Residents flooded', value: (r) => r.people.floodedPeople, digits: -2, lowerIsBetter: true },
+  { name: 'Living in heat islands', value: (r) => r.people.hotPeople, digits: -2, lowerIsBetter: true },
+  { name: '…in heat-vulnerable ZIP codes', value: (r) => r.people.hotVulnerable, digits: -2, lowerIsBetter: true },
+  { name: 'Summer surface where people live', value: (r) => r.people.peopleTemp, digits: 1, unit: ' °F', lowerIsBetter: true },
+];
+
+// Water use and rain capture, which the policies change. Not part of the climate score.
+const WATER_ROWS = [
+  { name: 'Toilet flushing at home', value: (r) => r.water.toiletMgd, digits: 1, unit: ' MGD', lowerIsBetter: true },
+  { name: 'Sewage from homes', value: (r) => r.water.sewageMgd, digits: 1, unit: ' MGD', lowerIsBetter: true },
+  { name: 'Hard surface holding rain', value: (r) => r.water.retainedHa, digits: 1, unit: ' ha' },
+  { name: 'Rain held on site, this storm', value: (r) => r.water.stormMg, digits: 1, unit: ' Mgal' },
+  { name: '…in a normal year', value: (r) => r.water.yearMg, digits: 0, unit: ' Mgal' },
+  { name: 'Stormwater flooding', value: (r) => r.metrics.flooding.stormHa, digits: 1, unit: ' ha', lowerIsBetter: true },
+];
+
+// A table of today's and the vision's values, with the change where there is one.
+function renderRows(el, specs, today, vision) {
+  el.innerHTML = specs.map((spec) => {
+    const t = spec.value(today), v = spec.value(vision);
     const d = v - t;
     const cls = spec.neutral ? '' : (spec.lowerIsBetter ? d < 0 : d > 0) ? 'good' : 'bad';
-    const change = Math.abs(d) < step ? '' : ` <span class="${cls}">${signed(d, spec.digits)}${spec.unit ?? ''}</span>`;
+    const change = Math.abs(d) < 10 ** -spec.digits / 2 ? '' : ` <span class="${cls}">${signed(d, spec.digits)}${spec.unit ?? ''}</span>`;
     return `<tr><th scope="row">${spec.name}</th><td>${fmt(v, spec.digits)}${spec.unit ?? ''}${change}</td></tr>`;
   }).join('');
 }
 
 export function renderScore(world, today, vision) {
-  renderPeople(today, vision);
+  renderRows($('#people'), PEOPLE, today, vision);
+  renderRows($('#water'), WATER_ROWS, today, vision);
+  renderRain(today, vision);
   renderEmissions(world, today, vision);
   // Each 1 ha cell moves the borough-wide score by only a few thousandths of a
   // point, so whole numbers hide most edits: show a decimal and an unrounded delta.
@@ -300,7 +347,7 @@ export function renderScore(world, today, vision) {
           <div class="fill" style="width:${v.score}%"></div>
           <div class="mark" style="left:${t.score}%" title="Today: ${Math.round(t.score)}"></div>
         </div>
-        <div class="metric-detail">${spec.detail(v)} ${change}</div>
+        <div class="metric-detail">${spec.detail(v, vision)} ${change}</div>
       </div>`;
   }).join('');
 }
@@ -332,6 +379,7 @@ export function renderInspector(world, vision, results, i) {
       + (vision.current[i] !== c.existing[i] ? ' <em>(type average)</em>' : c.measuredEmissions?.[i] >= 0.5 * c.emissions?.[i] && c.emissions[i] > 0 ? ' <em>(mostly reported, LL84)</em>' : c.emissions?.[i] > 0 ? ' <em>(estimated from floor area)</em>' : '')],
     ['Carbon uptake', `${fmt(p.uptake[i], 2)} t CO2e a year`],
   ];
+  if (p.roof[i]) rows.push(['Rain capture', `${fmt(p.roof[i], -1)} m² of hard surface holding rain on site`]);
   $('#cell-info').innerHTML = rows.map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`).join('');
 }
 

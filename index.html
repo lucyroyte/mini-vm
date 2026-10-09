@@ -19,6 +19,7 @@
       <button data-tool="lot" title="Paint a whole tax lot (L)">Lot</button>
       <button data-tool="fill" title="Fill a connected area of one type (F)">Fill</button>
       <button data-tool="restore" title="Paint cells back to how they are today (E)">Restore</button>
+      <button data-tool="mylot" title="Open a tax lot and try a green roof, rain tank and more on it (M)">My lot</button>
     </div>
     <div class="group" id="brush-size" title="Brush size">
       <label for="brush">Size</label>
@@ -64,7 +65,65 @@
     <div class="group">
       <button id="view-3d" aria-pressed="false" title="Tilt the map and show 3D buildings (Downtown Brooklyn so far). Right-drag to rotate.">3D</button>
     </div>
+    <div class="group" id="help">
+      <button id="help-toggle" aria-haspopup="true" aria-expanded="false" title="Help (?)" aria-label="Help">?</button>
+      <div class="menu" id="help-menu" hidden>
+        <button data-help="welcome">Welcome</button>
+        <button data-help="tour">Take the guided tour</button>
+        <button data-help="about">About Brooklyn Vision</button>
+      </div>
+    </div>
   </header>
+
+  <aside id="lot-panel" hidden aria-label="Lot">
+    <div class="lot-head">
+      <div>
+        <h2 id="lot-title"></h2>
+        <p class="note" id="lot-facts"></p>
+      </div>
+      <button id="lot-close" class="icon" title="Close" aria-label="Close">✕</button>
+    </div>
+    <div id="lot-body" hidden>
+      <section>
+        <h3>Try on this lot</h3>
+        <label class="field">Green roof <output id="lot-green-out"></output><input type="range" id="lot-green" min="0" max="100" step="5"></label>
+        <label class="field">Cool (white) roof <output id="lot-cool-out"></output><input type="range" id="lot-cool" min="0" max="100" step="5"></label>
+        <label class="field">Solar panels <output id="lot-solar-out"></output><input type="range" id="lot-solar" min="0" max="100" step="5"></label>
+        <label class="field">Rain tank <select id="lot-tank"></select></label>
+        <label class="field">Rain garden in place of paving <output id="lot-garden-out"></output><input type="range" id="lot-garden" min="0" step="10"></label>
+        <label class="check"><input type="checkbox" id="lot-downspouts"> Run the roof's downspouts into the rain garden</label>
+        <label class="field inline">Trees to plant <input type="number" id="lot-trees" min="0" max="20" step="1"></label>
+        <div class="policy" id="lot-toilets-row">
+          <label class="check"><input type="checkbox" id="lot-toilets"> Low-flow toilets</label>
+          <select id="lot-gpf" aria-label="Gallons per flush"></select>
+        </div>
+        <button id="lot-reset">Reset</button>
+      </section>
+      <section>
+        <h3>This storm</h3>
+        <p class="note" id="lot-storm-note"></p>
+        <div class="stack" id="lot-rain-bar"></div>
+        <table id="lot-storm" class="lot-table"></table>
+        <p class="note" id="lot-flood"></p>
+      </section>
+      <section>
+        <h3>A normal year</h3>
+        <table id="lot-year" class="lot-table"></table>
+      </section>
+      <section>
+        <h3>Summer heat</h3>
+        <table id="lot-heat" class="lot-table"></table>
+      </section>
+      <section>
+        <h3>Energy, carbon and water</h3>
+        <table id="lot-energy" class="lot-table"></table>
+      </section>
+      <details>
+        <summary>How the lot is modeled</summary>
+        <p class="note" id="lot-notes"></p>
+      </details>
+    </div>
+  </aside>
 
   <div id="palette" hidden role="dialog" aria-label="Ecosystem types"></div>
   <div id="legend" hidden></div>
@@ -80,6 +139,12 @@
           <div><div class="score muted" id="score-today">–</div><div class="caption">Today</div></div>
         </div>
         <div id="metrics"></div>
+        <div class="rain-budget">
+          <h3>Where the rain goes</h3>
+          <p class="note" id="rain-note"></p>
+          <div class="stack" id="rain-bar" role="img"></div>
+          <table id="rain"></table>
+        </div>
       </section>
 
       <section class="people-card">
@@ -106,6 +171,25 @@
           <select id="slr"></select>
         </label>
         <p class="note">Flooding is modeled for a 100-year coastal storm on top of sea level rise, and a one-hour rain at the chosen intensity. Stormwater starts from NYC's Stormwater Flood Maps.</p>
+      </section>
+
+      <section class="policies-card">
+        <h3>Policies</h3>
+        <p class="note">Rules the vision adopts across Brooklyn. Today has none of them.</p>
+        <div class="policy">
+          <label class="check"><input type="checkbox" id="policy-toilets"> Require low-flow toilets</label>
+          <select id="policy-gpf" aria-label="Gallons per flush"></select>
+        </div>
+        <div class="policy">
+          <label class="check"><input type="checkbox" id="policy-swr"> Unified Stormwater Rule (2022)</label>
+          <select id="policy-inches" aria-label="Rain each site holds"></select>
+          <select id="policy-retrofit" aria-label="Which buildings"></select>
+        </div>
+        <table id="water"></table>
+        <details>
+          <summary>How policies are modeled</summary>
+          <p class="note" id="policy-notes"></p>
+        </details>
       </section>
 
       <section>
@@ -139,6 +223,74 @@
   </aside>
 
   <div id="tooltip" hidden></div>
+
+  <div id="welcome" class="modal" hidden>
+    <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="welcome-title">
+      <button class="icon close" data-close aria-label="Close">×</button>
+      <h1 id="welcome-title">Welcome to Brooklyn Vision</h1>
+      <p>Reimagine Brooklyn's landscape and see what it would do for the climate. The map starts as Brooklyn is today, built from NYC Open Data.</p>
+      <ol class="welcome-steps">
+        <li><b>Paint</b> the map with forests, wetlands, green streets, buildings and more.</li>
+        <li><b>Adopt policies</b> and pick the storm and sea level rise to plan for.</li>
+        <li><b>Watch the report card</b> score your vision on flooding, biodiversity, heat and carbon against today.</li>
+      </ol>
+      <p class="note">Nothing you paint changes real data. Visions are saved in your browser and can be exported to share.</p>
+      <div class="modal-buttons">
+        <button id="welcome-tour" class="primary">Take the tour</button>
+        <button id="welcome-about">Why use it?</button>
+        <span class="spacer"></span>
+        <button id="welcome-start" class="link">Start exploring</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="about" class="modal" hidden>
+    <div class="modal-card about-card" role="dialog" aria-modal="true" aria-labelledby="about-title">
+      <button class="icon close" data-close aria-label="Close">×</button>
+      <h1 id="about-title">About Brooklyn Vision</h1>
+      <p>Brooklyn Vision is a sketching tool for the borough's future landscape. You repaint parts of Brooklyn, and simple climate models built on public data show how the change would affect flooding, habitat, heat and carbon, and who lives where it matters. It is inspired by <a href="https://visionmaker.nyc" target="_blank" rel="noopener">visionmaker.nyc</a>.</p>
+
+      <h2>Ways to use it</h2>
+      <div class="uses">
+        <section>
+          <h3>Urban planning</h3>
+          <p>Test a rezoning, a new park or a waterfront plan at the scale of blocks and neighborhoods. Compare options side by side by saving each as a vision, and check how much green space it takes to cool a heat island or keep a street from flooding.</p>
+        </section>
+        <section>
+          <h3>Policy change</h3>
+          <p>Turn on borough-wide rules like the Unified Stormwater Rule or low-flow toilets and see what they would do for sewer overflows and street flooding. Pair a policy with a planting plan to show what neither achieves alone.</p>
+        </section>
+        <section>
+          <h3>Community engagement</h3>
+          <p>Bring the map to a community board, block association or public workshop. People can paint what they want their neighborhood to become, see the trade-offs right away, and export the result to share or submit.</p>
+        </section>
+        <section>
+          <h3>Education</h3>
+          <p>Teach how cities and climate connect: why paved ground floods, why trees cool streets, how sea level rise reaches the shore. Students can set a goal, such as raising the heat score by five points, and work out how to reach it.</p>
+        </section>
+        <section>
+          <h3>Advocacy and storytelling</h3>
+          <p>Make the case for a greenway, a restored marsh or a depaved schoolyard with numbers and a map, and show how many residents live in the places that would benefit.</p>
+        </section>
+        <section>
+          <h3>Research and early screening</h3>
+          <p>Find where a change would matter most before spending on detailed study. Every cell carries its data sources, so results can be traced back and checked.</p>
+        </section>
+      </div>
+
+      <h2>What it can and can't tell you</h2>
+      <p>The models are quick screening estimates meant for comparing ideas, not engineering studies. Flooding uses a simple rain budget and the city's Stormwater Flood Maps rather than a full sewer model, and some land is mislabeled in the source data, such as Green-Wood Cemetery showing as park lawn. Treat the score as a guide to which ideas are worth a closer look.</p>
+      <p class="note">Data comes from NYC Open Data, the US Census, USGS Landsat and terrain data, NYC Planning and FloodNet. The full list is under <b>Borough → Data sources</b> in the side panel.</p>
+      <div class="modal-buttons">
+        <button id="about-tour" class="primary">Take the tour</button>
+        <span class="spacer"></span>
+        <button class="link" data-close>Close</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="tour-spot" hidden></div>
+  <div id="tour-card" role="dialog" aria-labelledby="tour-title" hidden></div>
 
   <div id="loading" role="status" aria-live="polite">
     <div class="loading-card">

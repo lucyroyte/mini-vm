@@ -167,6 +167,25 @@ h3 { margin: 0 0 8px; font-size: 14px; }
 #people span, #emissions span { font-weight: 600; margin-left: 4px; }
 #emissions tr.total th, #emissions tr.total td { color: inherit; font-weight: 600; border-top: 1px solid var(--line); padding-top: 4px; }
 #emissions tr.stored th, #emissions tr.stored td { padding-top: 8px; }
+#people, #water, #rain { width: 100%; border-collapse: collapse; font-size: 13px; }
+#people th, #water th, #rain th { text-align: left; font-weight: normal; color: var(--muted); padding: 2px 0; }
+#people td, #water td, #rain td { text-align: right; font-variant-numeric: tabular-nums; padding: 2px 0;  white-space: nowrap; }
+#people span, #water span, #rain td > span { font-weight: 600; margin-left: 4px; }
+
+.policy { display: flex; flex-wrap: wrap; gap: 4px 6px; align-items: center; margin: 8px 0; }
+.policy .check { flex-basis: 100%; }
+.policy select:disabled { opacity: 0.5; }
+.check { display: flex; gap: 6px; align-items: center; font-size: 13px; }
+#water { margin-top: 6px; }
+.rain-budget { margin-top: 14px; }
+.rain-budget .note { margin: 0 0 6px; }
+.stack { display: flex; height: 12px; border-radius: 4px; overflow: hidden; background: #edf0f2; margin-bottom: 6px; }
+.stack > div { height: 100%; transition: flex-basis 0.2s; }
+.stack > div + div { border-left: 1px solid var(--surface); }
+#rain .key { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 6px; vertical-align: -1px; }
+#rain tr.aside th { padding-top: 6px; }
+#rain td > span { display: block; font-size: 12px; }
+#rain th, #rain td { vertical-align: top; }
 
 .field { display: grid; gap: 4px; margin: 8px 0; }
 .field output { float: right; font-variant-numeric: tabular-nums; }
@@ -208,6 +227,30 @@ details { margin-top: 10px; }
 
 .maplibregl-ctrl-bottom-left { margin-bottom: 4px; }
 
+/* Lot panel */
+#lot-panel {
+  position: fixed; top: 64px; left: 10px; bottom: 60px; z-index: 3; width: 320px;
+  background: var(--surface); border-radius: 10px; box-shadow: var(--shadow);
+  padding: 12px 14px; overflow-y: auto;
+}
+.lot-head { display: flex; align-items: flex-start; gap: 8px; }
+.lot-head > div { flex: 1; }
+#lot-panel h2 { margin: 0; font-size: 16px; }
+#lot-panel h3 { margin: 0 0 6px; font-size: 14px; }
+#lot-panel .note { margin: 4px 0; font-size: 12px; color: var(--muted); }
+#lot-panel section { padding: 10px 0; border-top: 1px solid var(--line); }
+#lot-panel .field { margin: 6px 0; font-size: 13px; grid-template-columns: 1fr auto; }
+#lot-panel .field input, #lot-panel .field select { grid-column: 1 / -1; }
+#lot-panel .field output { color: var(--muted); }
+#lot-panel .field.inline { display: flex; align-items: center; justify-content: space-between; }
+#lot-panel .field.inline input { width: 64px; border: 1px solid var(--line); border-radius: 6px; padding: 3px 6px; }
+#lot-panel .policy { margin: 8px 0; }
+.lot-table { width: 100%; border-collapse: collapse; font-size: 13px; font-variant-numeric: tabular-nums; }
+.lot-table th { text-align: left; font-weight: 400; padding: 2px 6px 2px 0; vertical-align: top; }
+.lot-table td { text-align: right; white-space: nowrap; vertical-align: top; }
+.lot-table td > span { display: block; font-size: 12px; }
+.lot-table .key { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 6px; vertical-align: -1px; }
+
 @media (max-width: 760px) {
   :root { --panel-width: 100vw; }
   #toolbar { right: 10px; }
@@ -219,4 +262,54 @@ details { margin-top: 10px; }
   .palette-grid { grid-template-columns: 1fr 1fr; }
   #legend { left: 10px; bottom: calc(45vh + 10px); }
   .brand { width: 100%; }
+  #lot-panel { left: 10px; right: 10px; width: auto; bottom: calc(45vh + 10px); }
+}
+
+/* Onboarding: welcome card, About page, guided tour */
+button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+button.primary:hover { border-color: #165c3a; background: #1a6b43; }
+.spacer { flex: 1; }
+#help-toggle { width: 30px; font-weight: 700; padding: 5px 0; border-radius: 50%; }
+#help-menu { min-width: 200px; }
+#help-menu button { border: 0; text-align: left; padding: 5px 6px; }
+#help-menu button:hover { background: #f0f3f5; }
+
+.modal {
+  position: fixed; inset: 0; z-index: 20; display: grid; place-items: center; padding: 16px;
+  background: rgba(20, 24, 28, 0.45);
+}
+.modal-card {
+  position: relative; background: var(--surface); border-radius: 12px; box-shadow: var(--shadow);
+  padding: 22px 24px 18px; width: min(480px, 100%); max-height: calc(100vh - 32px); overflow-y: auto;
+}
+.modal-card h1 { margin: 0 32px 8px 0; font-size: 20px; }
+.modal-card h2 { margin: 18px 0 8px; font-size: 15px; }
+.modal-card p { margin: 0 0 10px; }
+.modal-card a { color: var(--accent); }
+.modal-card .close { position: absolute; top: 10px; right: 10px; font-size: 22px; line-height: 1; padding: 2px 6px; }
+.welcome-steps { margin: 12px 0; padding-left: 20px; display: grid; gap: 6px; }
+.modal-buttons { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 16px; }
+.about-card { width: min(720px, 100%); }
+.uses { display: grid; grid-template-columns: 1fr 1fr; gap: 10px 18px; }
+.uses section { border-top: 3px solid var(--accent); padding-top: 8px; }
+.uses h3 { margin: 0 0 4px; }
+.uses p { font-size: 13px; color: var(--text); }
+
+#tour-spot {
+  position: fixed; z-index: 15; pointer-events: none; border-radius: 8px;
+  box-shadow: 0 0 0 3px var(--accent), 0 0 0 9999px rgba(20, 24, 28, 0.4);
+  transition: left 0.2s, top 0.2s, width 0.2s, height 0.2s;
+}
+#tour-card {
+  position: fixed; top: 0; left: 0; z-index: 16; width: min(320px, calc(100vw - 16px));
+  background: var(--surface); border-radius: 10px; box-shadow: var(--shadow); padding: 12px 14px;
+}
+#tour-card h3 { margin: 2px 0 6px; font-size: 15px; }
+#tour-card p { margin: 0 0 8px; }
+.tour-count { font-size: 12px; color: var(--muted); }
+.tour-after { background: #e3f1e9; border-radius: 6px; padding: 6px 8px; }
+.tour-buttons { display: flex; align-items: center; gap: 6px; margin-top: 10px; }
+
+@media (max-width: 760px) {
+  .uses { grid-template-columns: 1fr; }
 }

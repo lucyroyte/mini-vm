@@ -5,16 +5,18 @@ import { loadSurfaceTemperature, loadStormwaterMaps, SURFACE_TEMP_SOURCE, STORMW
 import { loadLandCover, LANDCOVER_SOURCE } from './landcover.js';
 import { buildGrid, cellAt, cellBoundary, cellsInPolygon, CELL, HA_PER_CELL } from './grid.js';
 import { bboxOf, containsPoint, polygonsOf } from './geo.js';
-import { prepare, runModels, SCENARIO_PRESETS } from './models.js';
+import { prepare, runModels, SCENARIO_PRESETS, POLICY, POLICY_OPTIONS } from './models.js';
 import { Vision, savedVisions, saveVision, deleteVision } from './vision.js';
 import { createMap, paintCells, paintSome, setCursor } from './map.js';
 import { set3D } from './model3d.js';
+import { createLotPanel } from './lotpanel.js';
 import { cacheGet, cacheSet, cacheClear } from './store.js';
+import { initOnboarding } from './onboarding.js';
 import {
   $, renderPalette, renderScore, renderInspector, renderBorough, renderLegend, renderVisionList,
 } from './ui.js';
 
-const CACHE_KEY = 'world-v8';
+const CACHE_KEY = 'world-v10';
 const CACHE_DAYS = 30;
 
 // Loading ------------------------------------------------------------------------
@@ -152,7 +154,8 @@ async function start() {
 function app(world, map) {
   let vision = new Vision(world);
   let today, todayKey, results;
-  window.brooklynVision = { world, map, state, get vision() { return vision; } };
+  const lotPanel = createLotPanel({ world, map, results: () => ({ today, vision: results }) });
+  window.brooklynVision = { world, map, state, lotPanel, get vision() { return vision; } };
 
   // Models --------------------------------------------------------------------
   let modelTimer;
@@ -162,9 +165,10 @@ function app(world, map) {
       // Today only changes with the scenario, so it isn't rerun on every edit.
       const key = `${state.scenario.rainfall}/${state.scenario.seaLevelRise}`;
       if (key !== todayKey) { today = runModels(world, world.cells.existing, state.scenario); todayKey = key; }
-      results = runModels(world, vision.current, state.scenario);
+      results = runModels(world, vision.current, state.scenario, vision.policies);
       renderScore(world, today, results);
       renderInspector(world, vision, results, state.selected);
+      lotPanel.refresh();
       if (!['vision', 'today', 'changes', 'cover', 'elevation'].includes(state.mode)) paintCells(map, world, state.mode, vision, results);
     };
     if (immediate) run(); else modelTimer = setTimeout(run, 120);
@@ -188,6 +192,7 @@ function app(world, map) {
       updateVisionStats();
       recompute();
     });
+    renderPolicies();
     recompute(true);
     repaint();
     updateVisionStats();
@@ -198,8 +203,9 @@ function app(world, map) {
   const setTool = (tool) => {
     state.tool = tool;
     document.querySelectorAll('[data-tool]').forEach((b) => b.setAttribute('aria-pressed', b.dataset.tool === tool));
-    map.dragPan[tool === 'inspect' ? 'enable' : 'disable']();
-    map.getCanvas().style.cursor = tool === 'inspect' ? '' : 'crosshair';
+    const pans = tool === 'inspect' || tool === 'mylot';
+    map.dragPan[pans ? 'enable' : 'disable']();
+    map.getCanvas().style.cursor = tool === 'inspect' ? '' : tool === 'mylot' ? 'pointer' : 'crosshair';
     setCursor(map, []);
   };
   document.querySelectorAll('[data-tool]').forEach((b) => b.addEventListener('click', () => setTool(b.dataset.tool)));
@@ -263,7 +269,7 @@ function app(world, map) {
     if (mod && e.key.toLowerCase() === 'z') { e.preventDefault(); e.shiftKey ? vision.redo() : vision.undo(); return; }
     if (mod && e.key.toLowerCase() === 'y') { e.preventDefault(); vision.redo(); return; }
     if (mod) return;
-    const keys = { i: 'inspect', b: 'brush', r: 'rect', l: 'lot', f: 'fill', e: 'restore' };
+    const keys = { i: 'inspect', b: 'brush', r: 'rect', l: 'lot', f: 'fill', e: 'restore', m: 'mylot' };
     if (keys[e.key]) setTool(keys[e.key]);
     if (e.key === 'Escape') { togglePalette(false); setCursor(map, []); drag = null; }
   });
@@ -310,14 +316,19 @@ function app(world, map) {
     return out;
   };
   // Lot tool: the tax lot under the pointer, fetched on demand and kept for reuse.
+  // A new hover cancels the last hover's request, but never a click's.
   const lots = [];
   let lotRequest, lotTimer;
-  const lotAt = async (lon, lat) => {
+  const lotAt = async (lon, lat, hover = false) => {
     const hit = lots.find((l) => containsPoint(l.feature, lon, lat));
     if (hit) return hit;
-    lotRequest?.abort();
-    lotRequest = new AbortController();
-    const feature = await loadLotAt(lon, lat, lotRequest.signal);
+    let signal;
+    if (hover) {
+      lotRequest?.abort();
+      lotRequest = new AbortController();
+      ({ signal } = lotRequest);
+    } else clearTimeout(lotTimer);
+    const feature = await loadLotAt(lon, lat, signal);
     if (!feature) return null;
     const lot = { feature, cells: cellsInPolygon(world, feature) };
     // A lot smaller than a cell still paints the cell it sits in.
@@ -334,8 +345,8 @@ function app(world, map) {
     if (cached) { setCursor(map, lotOutline(cached), toolColor()); return; }
     lotTimer = setTimeout(async () => {
       try {
-        const lot = await lotAt(lng, lat);
-        if (state.tool === 'lot') setCursor(map, lot ? lotOutline(lot) : [], toolColor());
+        const lot = await lotAt(lng, lat, true);
+        if (state.tool === 'lot' || state.tool === 'mylot') setCursor(map, lot ? lotOutline(lot) : [], toolColor());
       } catch (err) {
         if (err.name !== 'AbortError') console.warn('Tax lot unavailable:', err.message);
       }
@@ -351,13 +362,13 @@ function app(world, map) {
     return changed;
   };
   const outline = (ids) => ids.map((i) => cellBoundary(world, i));
-  const toolColor = () => (state.tool === 'restore' ? '#ffffff' : ECOSYSTEMS[state.type].color);
+  const toolColor = () => (state.tool === 'restore' ? '#ffffff' : state.tool === 'mylot' ? '#1f7a4d' : ECOSYSTEMS[state.type].color);
 
   let drag = null;
   const cellOf = (e) => cellAt(world, e.lngLat.lng, e.lngLat.lat);
 
   map.on('mousedown', (e) => {
-    if (state.tool === 'inspect' || e.originalEvent.button !== 0) return;
+    if (state.tool === 'inspect' || state.tool === 'mylot' || e.originalEvent.button !== 0) return;
     const i = cellOf(e);
     if (i < 0) return;
     if (state.tool === 'lot') {
@@ -391,7 +402,7 @@ function app(world, map) {
     const i = cellOf(e);
     showTooltip(e, i);
     if (state.tool === 'inspect') { setCursor(map, i >= 0 ? outline([i]) : []); return; }
-    if (state.tool === 'lot') { showLot(e); return; }
+    if (state.tool === 'lot' || state.tool === 'mylot') { showLot(e); return; }
     if (state.tool === 'rect' && drag) { setCursor(map, i >= 0 ? [rectOutline(drag.start, i)] : [], toolColor()); return; }
     const ids = state.tool === 'fill' ? [i].filter((x) => x >= 0) : brushCells(i);
     setCursor(map, outline(ids), toolColor());
@@ -427,7 +438,7 @@ function app(world, map) {
 
   // Touch: one-finger painting on phones and tablets.
   map.on('touchstart', (e) => {
-    if (state.tool === 'inspect' || e.points.length !== 1) return;
+    if (state.tool === 'inspect' || state.tool === 'mylot' || e.points.length !== 1) return;
     e.preventDefault();
     map.fire('mousedown', { lngLat: e.lngLat, originalEvent: { button: 0 } });
   });
@@ -439,6 +450,14 @@ function app(world, map) {
   map.on('touchend', (e) => finish(e.lngLat ? e : undefined));
 
   map.on('click', (e) => {
+    if (state.tool === 'mylot') {
+      const { lng, lat } = e.lngLat;
+      const cell = cellOf(e);
+      lotAt(lng, lat).then((lot) => {
+        if (lot) lotPanel.open({ ...lot, cell: cell >= 0 ? cell : lot.cells[0] });
+      }).catch((err) => { if (err.name !== 'AbortError') alert(`The tax lot couldn't be loaded: ${err.message}`); });
+      return;
+    }
     if (state.tool !== 'inspect') return;
     state.selected = cellOf(e);
     renderInspector(world, vision, results, state.selected);
@@ -472,6 +491,38 @@ function app(world, map) {
   $('#slr').addEventListener('change', (e) => { state.scenario.seaLevelRise = +e.target.value; recompute(); });
   $('#rain-out').textContent = `${state.scenario.rainfall.toFixed(2)} in/hr`;
   document.querySelectorAll('[data-rain]').forEach((b) => b.classList.toggle('active', +b.dataset.rain === state.scenario.rainfall));
+
+  // Policies ------------------------------------------------------------------
+  const options = (el, list) => { el.innerHTML = list.map((o) => `<option value="${o.value}">${o.label}</option>`).join(''); };
+  options($('#policy-gpf'), POLICY_OPTIONS.gpf);
+  options($('#policy-inches'), POLICY_OPTIONS.inches);
+  options($('#policy-retrofit'), POLICY_OPTIONS.retrofit);
+  const renderPolicies = () => {
+    const { toilets, stormwaterRule } = vision.policies;
+    $('#policy-toilets').checked = toilets.on;
+    $('#policy-gpf').value = toilets.gpf;
+    $('#policy-gpf').disabled = !toilets.on;
+    $('#policy-swr').checked = stormwaterRule.on;
+    $('#policy-inches').value = stormwaterRule.inches;
+    $('#policy-retrofit').value = stormwaterRule.retrofit;
+    for (const id of ['#policy-inches', '#policy-retrofit']) $(id).disabled = !stormwaterRule.on;
+  };
+  const policyInputs = {
+    '#policy-toilets': (p, el) => { p.toilets.on = el.checked; },
+    '#policy-gpf': (p, el) => { p.toilets.gpf = +el.value; },
+    '#policy-swr': (p, el) => { p.stormwaterRule.on = el.checked; },
+    '#policy-inches': (p, el) => { p.stormwaterRule.inches = +el.value; },
+    '#policy-retrofit': (p, el) => { p.stormwaterRule.retrofit = el.value; },
+  };
+  for (const [id, set] of Object.entries(policyInputs)) {
+    $(id).addEventListener('change', (e) => { set(vision.policies, e.target); renderPolicies(); recompute(true); });
+  }
+  $('#policy-notes').textContent = `Low-flow toilets: Brooklyn's toilets are taken to average ${POLICY.toiletGpfToday} gallons a flush today, `
+    + `and residents flush ${POLICY.flushesPerDay} times a day at home; workers and visitors aren't counted. Less sewage leaves a little more room `
+    + 'in the combined sewers for rain. Unified Stormwater Rule: new development that disturbs 20,000 sq ft or adds 5,000 sq ft of hard surface '
+    + 'must hold the first 1.5 in of rain on site. Each painted cell counts as one site, so every painted building, parking lot, port or plaza holds '
+    + `that rain from its hard surface, which keeps about ${Math.round(100 * POLICY.annualCapture)}% of a ${POLICY.annualRainIn} in year out of the sewers. `
+    + 'The rule leaves existing buildings alone; the retrofit options ask what if they did it too.';
 
   // Visions -------------------------------------------------------------------
   const renderVisions = () => renderVisionList(savedVisions(), vision.created, {
@@ -527,6 +578,7 @@ function app(world, map) {
   renderBorough(world);
   setTool('inspect');
   bindVision(vision);
+  initOnboarding({ world, map, getVision: () => vision });
 }
 
 $('#retry').addEventListener('click', start);

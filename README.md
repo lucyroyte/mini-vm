@@ -18,6 +18,8 @@ The first load downloads Brooklyn's data from NYC Open Data, which takes about a
 
 ## Using it
 
+On a first visit a welcome card explains the app and offers a **guided tour** and an **About** page on ways to use it (urban planning, policy change, community engagement, education, advocacy, early screening). The tour highlights each control in turn, and its **Show me** steps paint a forest in Gowanus, undo it, adopt the Unified Stormwater Rule and switch the map to flooding so you can watch the report card move; everything is put back when the tour ends. The **?** button in the toolbar (or the ? key) reopens all three.
+
 - **Toolbar**
   - **Inspect**: pan the map and click a cell to see its attributes.
   - **Brush**: paint cells with the chosen ecosystem type. Brush widths are 50, 150, 250, 450 or 850 m.
@@ -37,7 +39,7 @@ The first load downloads Brooklyn's data from NYC Open Data, which takes about a
   - Vision management: name, save to the browser, export and import as JSON.
   - The selected cell's attributes, and facts and data sources for the borough.
 
-Keyboard shortcuts: I, B, R, F and E pick the tools; Esc closes the palette.
+Keyboard shortcuts: I, B, R, F and E pick the tools; ? opens help; Esc closes the palette or the tour; the arrow keys step through the tour.
 
 ## Data
 

@@ -46,6 +46,7 @@ function addLayers(map, world) {
   map.addSource('shoreline', { type: 'geojson', data: fc(world.layers.shoreline) });
   map.addSource('buildings', { type: 'geojson', data: empty() });
   map.addSource('cursor', { type: 'geojson', data: empty() });
+  map.addSource('selected-lot', { type: 'geojson', data: empty() });
   map.addSource('floodnet', { type: 'geojson', data: empty() });
 
   map.addLayer({
@@ -102,6 +103,10 @@ function addLayers(map, world) {
   map.addLayer({
     id: 'boundary', type: 'line', source: 'boundary',
     paint: { 'line-color': '#222222', 'line-width': 1.5, 'line-opacity': 0.8 },
+  });
+  map.addLayer({
+    id: 'selected-lot', type: 'line', source: 'selected-lot',
+    paint: { 'line-color': '#1f7a4d', 'line-width': 3 },
   });
   map.addLayer({
     id: 'cursor-fill', type: 'fill', source: 'cursor',
@@ -206,4 +211,9 @@ export function setCursor(map, rings, color) {
     type: 'FeatureCollection',
     features: rings.map((ring) => ({ type: 'Feature', properties: { color }, geometry: { type: 'Polygon', coordinates: [ring] } })),
   });
+}
+
+// The lot open in the lot panel, outlined until the panel closes.
+export function setSelectedLot(map, feature) {
+  map.getSource('selected-lot')?.setData({ type: 'FeatureCollection', features: feature ? [feature] : [] });
 }
